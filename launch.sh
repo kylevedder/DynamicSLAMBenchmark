@@ -11,4 +11,4 @@ docker run --gpus=all --rm -it \
  -e DISPLAY=$DISPLAY \
  -h $HOSTNAME \
  --privileged \
- kylevedder/zeroflow:latest
+ otto_von_benchmark
