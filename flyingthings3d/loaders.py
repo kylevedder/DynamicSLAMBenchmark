@@ -10,6 +10,7 @@ import imageio
 
 
 def read(file):
+    file = str(file)
     if file.endswith('.float3'): return readFloat(file)
     elif file.endswith('.flo'): return readFlow(file)
     elif file.endswith('.ppm'): return readImage(file)
@@ -21,6 +22,7 @@ def read(file):
 
 
 def write(file, data):
+    file = str(file)
     if file.endswith('.float3'): return writeFloat(file, data)
     elif file.endswith('.flo'): return writeFlow(file, data)
     elif file.endswith('.ppm'): return writeImage(file, data)
@@ -31,7 +33,8 @@ def write(file, data):
     else: raise Exception('don\'t know how to write %s' % file)
 
 
-def readCameraData(file):
+def load_camera_matrices(file):
+    file = str(file)
     lines = open(file).readlines()
     lines = [line.strip() for line in lines]
     lines = [line for line in lines if line != ""]

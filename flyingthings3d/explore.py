@@ -3,8 +3,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import open3d as o3d
 import numpy as np
+import copy
+
+from dataset import FlyingThings3D
 
 root_dir = Path("/efs/flying_things_3d_sample/")
+
+
 
 
 def get_intrinsics():
@@ -42,17 +47,27 @@ def to_o3d_rgbd_image(rgb, depth_image):
         color=rgb_img,
         depth=depth_img,
         depth_scale=1.0,
-        depth_trunc=1000.0,
+        depth_trunc=np.inf,
         convert_rgb_to_intensity=False,
     )
 
 
 rgb_image_paths = sorted((root_dir / "RGB_cleanpass" / "left").glob("*.png"))
 disparity_image_paths = sorted((root_dir / "disparity").glob("*.pfm"))
+disparity_change_image_paths = sorted(
+    (root_dir / "disparity_change").glob("*.pfm"))
+optical_flow_image_paths = sorted(
+    (root_dir / "optical_flow" / "forward").glob("*.pfm"))
 
 rgb_images = [loaders.read(str(path)) for path in rgb_image_paths]
 disparity_images = [loaders.read(str(path)) for path in disparity_image_paths]
-camera_data = loaders.readCameraData(root_dir / "camera_data.txt")
+disparity_change_images = [
+    loaders.read(str(path)) for path in disparity_change_image_paths
+]
+optical_flow_images = [
+    loaders.read(str(path))[:, :, :2] for path in optical_flow_image_paths
+]
+camera_data = loaders.load_camera_matrices(root_dir / "camera_data.txt")
 camera_data_left = [data["left"] for data in camera_data]
 camera_data_right = [data["right"] for data in camera_data]
 intrinsics = get_intrinsics()
@@ -74,6 +89,10 @@ def disparity_to_depth(disparity, intrinsics, baseline=1.0):
     return (baseline * intrinsics["fx"]) / disparity
 
 
+def depth_to_disparity(depth, intrinsics, baseline=1.0):
+    return (baseline * intrinsics["fx"]) / depth
+
+
 assert len(rgb_images) == len(
     disparity_images
 ), f"len mismatch, {len(rgb_images)} != {len(disparity_images)}"
@@ -89,10 +108,13 @@ vis.create_window()
 world_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=10)
 vis.add_geometry(world_frame)
 
-for idx, (blender_T_cam_left, blender_T_cam_right, disparity, rgb,
-          depth) in enumerate(
+for idx, (blender_T_cam_left, blender_T_cam_right, disparity, rgb, flow,
+          disparity_change, depth) in enumerate(
               zip(camera_data_left, camera_data_right, disparity_images,
-                  rgb_images, depth_images)):
+                  rgb_images, optical_flow_images, disparity_change_images,
+                  depth_images)):
+    # if idx != 0:
+    #     break
 
     zero_vector = np.array([0, 0, 0, 1])
 
@@ -143,10 +165,41 @@ for idx, (blender_T_cam_left, blender_T_cam_right, disparity, rgb,
     line.lines = o3d.utility.Vector2iVector(np.array([[0, 1]]))
     line.colors = o3d.utility.Vector3dVector(np.array([[1, 0, 0], [0, 0, 1]]))
 
-    # Convert depth to o3d PointCloud
-    # plt.imshow(depth)
-    # plt.colorbar()
+    # # Subplot 1 of 2: RGB image
+    # plt.subplot(2, 1, 1)
+    # plt.imshow(rgb_images[idx + 1])
+    # # plt.colorbar()
+    # # plt.gca().axis("off")
+
+    # # Subplot 2 of 2: flow
+    # plt.subplot(2, 1, 2)
+    # plt.imshow(rgb)
+    # # X positions repeated for each row
+    # x_positions = np.repeat(np.arange(flow.shape[1]), flow.shape[0])
+    # # Y positions repeated for each column
+    # y_positions = np.tile(np.arange(flow.shape[0]), flow.shape[1])
+
+    # print("flow.shape", flow.shape)
+
+    # for x_idx, y_idx in np.ndindex(flow.shape[:2]):
+    #     if x_idx % 50 != 1 or y_idx % 50 != 1:
+    #         continue
+    #     print("x_idx", x_idx, "y_idx", y_idx)
+    #     plt.arrow(
+    #         y_idx,
+    #         x_idx,
+    #         flow[x_idx, y_idx, 0],
+    #         flow[x_idx, y_idx, 1],
+    #         color="green", length_includes_head=True, head_width=30, head_length=30
+    #     )
+
+    # # plt.imshow(flow)
+    # # plt.colorbar()
+    # plt.gca().set_aspect("equal")
+    # # plt.gca().axis("off")
+
     # plt.show()
+
     o3d_depth_image = to_o3d_rgbd_image(rgb, depth)
     o3d_intrinsics = get_o3d_intrinsics(intrinsics)
 
@@ -157,9 +210,10 @@ for idx, (blender_T_cam_left, blender_T_cam_right, disparity, rgb,
         [0, 0, 0, 1],
     ])
     # Convert depth image to point cloud
-    pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
+    pointcloud = o3d.geometry.PointCloud.create_from_rgbd_image(
         o3d_depth_image, o3d_intrinsics, standard_frame_extrinsics)
-    pcd = pcd.transform(blender_T_cam_left @ blender_T_world)
+    warped_pointcloud = copy.deepcopy(pointcloud)
+    # pointcloud = pointcloud.transform(blender_T_cam_left @ blender_T_world)
 
     # Add meshes to visualizer
     vis.add_geometry(left_cam_sphere)
@@ -169,13 +223,14 @@ for idx, (blender_T_cam_left, blender_T_cam_right, disparity, rgb,
 
     vis.add_geometry(right_cam_sphere)
     vis.add_geometry(line)
-    vis.add_geometry(pcd)
+    vis.add_geometry(pointcloud)
+    vis.add_geometry(warped_pointcloud)
 
 # Show visualization
 vis.run()
 
 # Make N subplots, one for each rgb image
-fig, axes = plt.subplots(nrows=len(rgb_images), ncols=3)
+fig, axes = plt.subplots(nrows=len(rgb_images), ncols=2)
 
 # Show RGB images in column 0
 for i, ax in enumerate(axes[:, 0]):
@@ -183,21 +238,42 @@ for i, ax in enumerate(axes[:, 0]):
     ax.set_title(f"rgb image {i}")
     ax.axis("off")
 
-# Show disparity images in column 1
-for i, ax in enumerate(axes[:, 1]):
-    im = ax.imshow(disparity_images[i])
-    ax.set_title(f"disparity image {i}")
-    ax.axis("off")
-    # Add colorbar to current axis
-    fig.colorbar(im, ax=ax)
+# # Show disparity images in column 1
+# for i, ax in enumerate(axes[:, 1]):
+#     im = ax.imshow(disparity_images[i])
+#     ax.set_title(f"disparity image {i}")
+#     ax.axis("off")
+#     # Add colorbar to current axis
+#     fig.colorbar(im, ax=ax)
 
-# Show depth images in column 2
-for i, ax in enumerate(axes[:, 2]):
-    depth_image = depth_images[i]
-    im = ax.imshow(depth_image)
-    ax.set_title(f"depth image {i}")
+# # Show depth images in column 2
+# for i, ax in enumerate(axes[:, 2]):
+#     depth_image = depth_images[i]
+#     im = ax.imshow(depth_image)
+#     ax.set_title(f"depth image {i}")
+#     ax.axis("off")
+#     # Add colorbar to current axis
+#     fig.colorbar(im, ax=ax)
+
+# Show optical flow images in column 3
+for i, ax in enumerate(axes[:, 1]):
+    # Draw grid of dots at each pixel location using scatter
+    flow = optical_flow_images[i]
+    breakpoint()
+    # X positions repeated for each row
+    x_positions = np.repeat(np.arange(flow.shape[1]), flow.shape[0])
+    # Y positions repeated for each column
+    y_positions = np.tile(np.arange(flow.shape[0]), flow.shape[1])
+
+    ax.scatter(
+        x_positions,
+        y_positions,
+        s=1,
+    )
+
+    ax.set_title(f"optical flow image {i}")
+    # Set axis to be equal so that dots are not stretched
+    ax.set_aspect("equal")
     ax.axis("off")
-    # Add colorbar to current axis
-    fig.colorbar(im, ax=ax)
 
 plt.show()
