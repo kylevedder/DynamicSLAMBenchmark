@@ -37,8 +37,8 @@ class FlyingThings3D:
             loaders.read(path) for path in disparity_change_image_paths
         ]
         self.depth_change_images = [
-            self._disparity_to_depth(disparity + disparity_change) - self._disparity_to_depth(disparity)
-            
+            self._disparity_to_depth(disparity + disparity_change) -
+            self._disparity_to_depth(disparity)
             for disparity_change, disparity in zip(
                 self.disparity_change_images, self.disparity_images)
         ]
@@ -68,7 +68,8 @@ class FlyingThings3D:
             f"rgb_images and camera_data_right have different lengths, {len(self.left_rgb_images)} != {len(self.blender_T_camera_right_lst)}"
 
     def __len__(self):
-        return len(self.left_rgb_images)
+        # We only have N - 1 frames where the pose before and after is known, so we only have N - 1 samples.
+        return len(self.left_rgb_images) - 1
 
     def _get_cam_pose(self, world_T_cam) -> SE3:
         # Blender coordinate frame is different from standard robotics
@@ -177,25 +178,27 @@ class FlyingThings3D:
     def __getitem__(self, idx):
         assert idx < len(self), f"idx out of bounds, {idx} >= {len(self)}"
 
-        blender_T_cam_left = self.blender_T_camera_left_lst[idx]
-        blender_T_cam_right = self.blender_T_camera_right_lst[idx]
+        left_cam_pose_t = self._get_cam_pose(
+            self.blender_T_camera_left_lst[idx])
+        right_cam_pose_t = self._get_cam_pose(
+            self.blender_T_camera_right_lst[idx])
+        left_cam_pose_tp1 = self._get_cam_pose(
+            self.blender_T_camera_left_lst[idx + 1])
 
-        left_cam_pose = self._get_cam_pose(blender_T_cam_left)
-        right_cam_pose = self._get_cam_pose(blender_T_cam_right)
+        left_cam_rgb_t = self.left_rgb_images[idx]
+        depth_image_t = self.depth_images[idx]
 
-        left_cam_rgb = self.left_rgb_images[idx]
-        depth_image = self.depth_images[idx]
-
-        left_pc, left_flowed_pc = self._get_pc_flowed_pc(
-            depth_image, self.optical_flow_images[idx],
+        left_pc_t, left_flowed_pc_tp1 = self._get_pc_flowed_pc(
+            depth_image_t, self.optical_flow_images[idx],
             self.depth_change_images[idx])
 
         return {
-            "left_cam_rgb": left_cam_rgb,
-            "left_cam_pose": left_cam_pose,
-            "right_cam_pose": right_cam_pose,
-            "left_pointcloud": left_pc,
-            "left_pointcloud_flowed": left_flowed_pc,
+            "left_cam_rgb_t": left_cam_rgb_t,
+            "left_cam_pose_t": left_cam_pose_t,
+            "right_cam_pose_t": right_cam_pose_t,
+            "left_cam_pose_tp1": left_cam_pose_tp1,
+            "left_pointcloud_t": left_pc_t,
+            "left_pointcloud_flowed_tp1": left_flowed_pc_tp1,
         }
 
     def _disparity_to_depth(self, disparity_image, baseline=1.0):
