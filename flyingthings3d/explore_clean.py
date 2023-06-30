@@ -17,6 +17,10 @@ vis.create_window()
 # Draw world coordinate frame
 world_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=10)
 vis.add_geometry(world_frame)
+# Set point size
+vis.get_render_option().point_size = 0.1
+# Set background color gray
+vis.get_render_option().background_color = np.array([0.5, 0.5, 0.5])
 
 
 def draw_line_between_cameras(left_cam_pose: SE3, right_cam_pose: SE3):
@@ -36,14 +40,54 @@ def add_geometry(geometry):
         vis.add_geometry(geometry)
 
 
+def make_lineset_from_flowed_pointcloud(pointcloud: PointCloud,
+                                        flowed_pointcloud: PointCloud):
+    line = o3d.geometry.LineSet()
+    line.points = o3d.utility.Vector3dVector(
+        np.vstack((pointcloud.points, flowed_pointcloud.points)))
+    line.lines = o3d.utility.Vector2iVector(
+        np.array([[idx, idx + len(pointcloud.points)]
+                  for idx in range(len(pointcloud.points))]))
+    return line
+
+
+color_scale = np.linspace(0, 1, len(dataset) + 1)[1:][::-1]
+print("COLOR SCALE:", color_scale)
+
 for idx in range(len(dataset)):
     data = dataset[idx]
+    data_p1 = dataset[idx + 1]
     left_cam_pose: SE3 = data["left_cam_pose"]
     right_cam_pose: SE3 = data["right_cam_pose"]
     left_pointcloud: PointCloud = data["left_pointcloud"]
+    left_pointcloud_flowed: PointCloud = data["left_pointcloud_flowed"]
 
     add_geometry([left_cam_pose.to_o3d(), right_cam_pose.to_o3d()])
     add_geometry(draw_line_between_cameras(left_cam_pose, right_cam_pose))
-    add_geometry(left_pointcloud.transform(left_cam_pose).to_o3d())
+
+    mask = left_pointcloud.within_region_mask(-250, 250, -250, 250, -250, 250)
+    left_pointcloud = left_pointcloud.mask_points(mask)
+    left_pointcloud_flowed = left_pointcloud_flowed.mask_points(mask)
+
+    # Transform pointclouds to world frame
+    # left_pointcloud = left_pointcloud.transform(left_cam_pose)
+    # left_pointcloud_flowed = left_pointcloud_flowed.transform(left_cam_pose)
+
+    left_pc_o3d = left_pointcloud.to_o3d()
+    left_pc_o3d.paint_uniform_color([color_scale[idx], 0, 0])
+    add_geometry(left_pc_o3d)
+    
+    if idx > 0:
+        break
+
+    left_pc_flowed_o3d = left_pointcloud_flowed.to_o3d()
+    left_pc_flowed_o3d.paint_uniform_color([0, color_scale[idx], 0])
+    add_geometry(left_pc_flowed_o3d)
+
+    # flow_lineset = make_lineset_from_flowed_pointcloud(left_pointcloud,
+    #                                                    left_pointcloud_flowed)
+    # flow_lineset.colors = o3d.utility.Vector3dVector(
+    #     np.array([[0, color_scale[idx], 0]] * len(left_pointcloud.points)))
+    # add_geometry(flow_lineset)
 
 vis.run()

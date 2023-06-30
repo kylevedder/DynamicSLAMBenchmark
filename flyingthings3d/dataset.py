@@ -3,8 +3,9 @@ import loaders
 import numpy as np
 
 from pointclouds import SE3, PointCloud
-from scipy.spatial.transform import Rotation as R
+import matplotlib.pyplot as plt
 import open3d as o3d
+from typing import Tuple, List, Dict, Any
 
 
 class FlyingThings3D:
@@ -13,7 +14,7 @@ class FlyingThings3D:
         root_dir = Path(root_dir)
         self.root_dir = root_dir
 
-        rgb_image_paths = sorted(
+        left_rgb_image_paths = sorted(
             (self.root_dir / "RGB_cleanpass" / "left").glob("*.png"))
         disparity_image_paths = sorted(
             (self.root_dir / "disparity").glob("*.pfm"))
@@ -22,7 +23,9 @@ class FlyingThings3D:
         optical_flow_image_paths = sorted(
             (self.root_dir / "optical_flow" / "forward").glob("*.pfm"))
 
-        self.rgb_images = [loaders.read(path) for path in rgb_image_paths]
+        self.left_rgb_images = [
+            loaders.read(path) for path in left_rgb_image_paths
+        ]
         self.disparity_images = [
             loaders.read(path) for path in disparity_image_paths
         ]
@@ -33,16 +36,22 @@ class FlyingThings3D:
         self.disparity_change_images = [
             loaders.read(path) for path in disparity_change_image_paths
         ]
+        self.depth_change_images = [
+            self._disparity_to_depth(disparity + disparity_change) - self._disparity_to_depth(disparity)
+            
+            for disparity_change, disparity in zip(
+                self.disparity_change_images, self.disparity_images)
+        ]
         self.optical_flow_images = [
             loaders.read(path)[:, :, :2] for path in optical_flow_image_paths
         ]
 
-        assert len(self.rgb_images) == len(self.disparity_images), \
-            f"rgb_images and disparity_images have different lengths, {len(self.rgb_images)} != {len(self.disparity_images)}"
-        assert len(self.rgb_images) == len(self.disparity_change_images), \
-            f"rgb_images and disparity_change_images have different lengths, {len(self.rgb_images)} != {len(self.disparity_change_images)}"
-        assert len(self.rgb_images) == len(self.optical_flow_images), \
-            f"rgb_images and optical_flow_images have different lengths, {len(self.rgb_images)} != {len(self.optical_flow_images)}"
+        assert len(self.left_rgb_images) == len(self.disparity_images), \
+            f"rgb_images and disparity_images have different lengths, {len(self.left_rgb_images)} != {len(self.disparity_images)}"
+        assert len(self.left_rgb_images) == len(self.disparity_change_images), \
+            f"rgb_images and disparity_change_images have different lengths, {len(self.left_rgb_images)} != {len(self.disparity_change_images)}"
+        assert len(self.left_rgb_images) == len(self.optical_flow_images), \
+            f"rgb_images and optical_flow_images have different lengths, {len(self.left_rgb_images)} != {len(self.optical_flow_images)}"
 
         self.camera_data = loaders.load_camera_matrices(root_dir /
                                                         "camera_data.txt")
@@ -53,13 +62,13 @@ class FlyingThings3D:
             data["right"] for data in self.camera_data
         ]
 
-        assert len(self.rgb_images) == len(self.blender_T_camera_left_lst), \
-            f"rgb_images and camera_data_left have different lengths, {len(self.rgb_images)} != {len(self.blender_T_camera_left_lst)}"
-        assert len(self.rgb_images) == len(self.blender_T_camera_right_lst), \
-            f"rgb_images and camera_data_right have different lengths, {len(self.rgb_images)} != {len(self.blender_T_camera_right_lst)}"
+        assert len(self.left_rgb_images) == len(self.blender_T_camera_left_lst), \
+            f"rgb_images and camera_data_left have different lengths, {len(self.left_rgb_images)} != {len(self.blender_T_camera_left_lst)}"
+        assert len(self.left_rgb_images) == len(self.blender_T_camera_right_lst), \
+            f"rgb_images and camera_data_right have different lengths, {len(self.left_rgb_images)} != {len(self.blender_T_camera_right_lst)}"
 
     def __len__(self):
-        return len(self.rgb_images)
+        return len(self.left_rgb_images)
 
     def _get_cam_pose(self, world_T_cam) -> SE3:
         # Blender coordinate frame is different from standard robotics
@@ -90,22 +99,80 @@ class FlyingThings3D:
             convert_rgb_to_intensity=False,
         )
 
-    def _get_pointcloud(self, rgb, depth_image) -> PointCloud:
-        o3d_rgbd = self._to_o3d_rgbd_image(rgb, depth_image)
-        o3d_intrinsics = self._o3d_intrinsics()
-        # By default Open3D projects everything along Z axis, so this converts to X axis,
-        # robotics standard right hand rule.
-        standard_frame_extrinsics = np.array([
-            [0, -1, 0, 0],
-            [0, 0, -1, 0],
-            [1, 0, 0, 0],
-            [0, 0, 0, 1],
-        ])
-        o3d_pointcloud = o3d.geometry.PointCloud.create_from_rgbd_image(
-            o3d_rgbd, o3d_intrinsics, standard_frame_extrinsics)
-        points = np.asarray(o3d_pointcloud.points)
-        colors = np.asarray(o3d_pointcloud.colors)
-        return PointCloud(points)
+    def _get_pc_flowed_pc(
+            self, depth_image, image_space_flow_deltas,
+            image_space_depth_change) -> Tuple[PointCloud, PointCloud]:
+        assert image_space_flow_deltas.shape[:2] == depth_image.shape[:2], \
+            f"shape mismatch, {image_space_flow_deltas.shape} != {depth_image.shape}"
+        assert image_space_flow_deltas.shape[:2] == image_space_depth_change.shape[:2], \
+            f"shape mismatch, {image_space_flow_deltas.shape} != {image_space_depth_change.shape}"
+
+        assert image_space_flow_deltas.shape[2] == 2, \
+            f"flow_image must have 2 channels, {image_space_flow_deltas.shape[2]} != 2"
+        assert depth_image.ndim == 2, \
+            f"depth_image must have 2 dimensions, {depth_image.ndim} != 2"
+        assert image_space_depth_change.ndim == 2, \
+            f"depth_change_image must have 2 dimensions, {image_space_depth_change.ndim} != 2"
+
+        # Add third dimension to depth and depth change images.
+        depth_image = depth_image[..., np.newaxis]
+        image_space_depth_change = image_space_depth_change[..., np.newaxis]
+
+        # X positions repeated for each row
+        x_positions = np.tile(np.arange(image_space_flow_deltas.shape[1]),
+                              (image_space_flow_deltas.shape[0], 1))
+        # Y positions repeated for each column
+        y_positions = np.tile(np.arange(image_space_flow_deltas.shape[0]),
+                              (image_space_flow_deltas.shape[1], 1)).T
+
+        # Stack the x and y positions into a 3D array of shape (H, W, 2)
+        image_space_input_positions = np.stack([x_positions, y_positions],
+                                               axis=2).astype(np.float32)
+
+        def project_to_camera_frame(image_space_positions, depth_image):
+            # As noted on the FlyingThings3D page, the focal lengths should actually be negative,
+            # but they do not negate them for consistency; many packages like Open3D expect positive.
+            focal_array = -np.array(
+                [self.intrinsics["fx"], self.intrinsics["fy"]])
+
+            center_array = np.array(
+                [self.intrinsics["cx"], self.intrinsics["cy"]])
+
+            # image space = focal * camera space / depth
+            # image space * depth / focal = camera space
+
+            image_space_centered = image_space_positions - center_array[
+                None, None, :]
+            return image_space_centered * depth_image / focal_array[None,
+                                                                    None, :]
+
+        camera_frame_input_positions = project_to_camera_frame(
+            image_space_input_positions, depth_image)
+
+        camera_frame_flowed_positions = project_to_camera_frame(
+            image_space_input_positions + image_space_flow_deltas,
+            depth_image + image_space_depth_change)
+
+        camera_frame_input_positions_xyz = np.concatenate([
+            depth_image,
+            camera_frame_input_positions,
+        ],
+                                                          axis=2)
+
+        camera_frame_flowed_positions_xyz = np.concatenate([
+            depth_image + image_space_depth_change,
+            camera_frame_flowed_positions,
+        ],
+                                                           axis=2)
+
+        assert camera_frame_input_positions_xyz.shape == camera_frame_flowed_positions_xyz.shape, \
+            f"shape mismatch, {camera_frame_input_positions_xyz.shape} != {camera_frame_flowed_positions_xyz.shape}"
+
+        input_pointcloud = PointCloud(
+            camera_frame_input_positions_xyz.reshape(-1, 3))
+        flowed_pointcloud = PointCloud(
+            camera_frame_flowed_positions_xyz.reshape(-1, 3))
+        return input_pointcloud, flowed_pointcloud
 
     def __getitem__(self, idx):
         assert idx < len(self), f"idx out of bounds, {idx} >= {len(self)}"
@@ -116,15 +183,19 @@ class FlyingThings3D:
         left_cam_pose = self._get_cam_pose(blender_T_cam_left)
         right_cam_pose = self._get_cam_pose(blender_T_cam_right)
 
-        rgb = self.rgb_images[idx]
+        left_cam_rgb = self.left_rgb_images[idx]
         depth_image = self.depth_images[idx]
 
-        left_pointcloud = self._get_pointcloud(rgb, depth_image)
+        left_pc, left_flowed_pc = self._get_pc_flowed_pc(
+            depth_image, self.optical_flow_images[idx],
+            self.depth_change_images[idx])
 
         return {
+            "left_cam_rgb": left_cam_rgb,
             "left_cam_pose": left_cam_pose,
             "right_cam_pose": right_cam_pose,
-            "left_pointcloud": left_pointcloud,
+            "left_pointcloud": left_pc,
+            "left_pointcloud_flowed": left_flowed_pc,
         }
 
     def _disparity_to_depth(self, disparity_image, baseline=1.0):

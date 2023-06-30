@@ -105,14 +105,20 @@ class PointCloud():
 
         return PointCloud(self.points[mask])
 
-    def within_region(self, x_min, x_max, y_min, y_max, z_min,
-                      z_max) -> 'PointCloud':
+    def within_region_mask(self, x_min, x_max, y_min, y_max, z_min,
+                           z_max) -> np.ndarray:
         mask = np.logical_and(self.points[:, 0] < x_max,
                               self.points[:, 0] > x_min)
         mask = np.logical_and(mask, self.points[:, 1] < y_max)
         mask = np.logical_and(mask, self.points[:, 1] > y_min)
         mask = np.logical_and(mask, self.points[:, 2] < z_max)
         mask = np.logical_and(mask, self.points[:, 2] > z_min)
+        return mask
+
+    def within_region(self, x_min, x_max, y_min, y_max, z_min,
+                      z_max) -> 'PointCloud':
+        mask = self.within_region_mask(x_min, x_max, y_min, y_max, z_min,
+                                       z_max)
         return self.mask_points(mask)
 
     @property
