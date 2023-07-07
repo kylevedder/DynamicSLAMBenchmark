@@ -3,7 +3,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import open3d as o3d
 import numpy as np
-from pointclouds import SE3, PointCloud
+from datastructures import SE3, PointCloud
 
 from dataset import FlyingThings3D
 

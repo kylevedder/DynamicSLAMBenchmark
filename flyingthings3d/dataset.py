@@ -2,7 +2,7 @@ from pathlib import Path
 import loaders
 import numpy as np
 
-from pointclouds import SE3, PointCloud
+from datastructures import SE3, PointCloud
 import matplotlib.pyplot as plt
 import open3d as o3d
 from typing import Tuple, List, Dict, Any
@@ -130,49 +130,16 @@ class FlyingThings3D:
         image_space_input_positions = np.stack([x_positions, y_positions],
                                                axis=2).astype(np.float32)
 
-        def project_to_camera_frame(image_space_positions, depth_image):
-            # As noted on the FlyingThings3D page, the focal lengths should actually be negative,
-            # but they do not negate them for consistency; many packages like Open3D expect positive.
-            focal_array = -np.array(
-                [self.intrinsics["fx"], self.intrinsics["fy"]])
+        input_pointcloud = PointCloud.from_image_space_points_and_depth(
+            image_space_input_positions.reshape(-1, 2),
+            depth_image.reshape(-1, 1), self.intrinsics)
 
-            center_array = np.array(
-                [self.intrinsics["cx"], self.intrinsics["cy"]])
+        flowed_pointcloud = PointCloud.from_image_space_points_and_depth(
+            (image_space_input_positions + image_space_flow_deltas).reshape(
+                -1,
+                2), (depth_image + image_space_depth_change).reshape(-1, 1),
+            self.intrinsics)
 
-            # image space = focal * camera space / depth
-            # image space * depth / focal = camera space
-
-            image_space_centered = image_space_positions - center_array[
-                None, None, :]
-            return image_space_centered * depth_image / focal_array[None,
-                                                                    None, :]
-
-        camera_frame_input_positions = project_to_camera_frame(
-            image_space_input_positions, depth_image)
-
-        camera_frame_flowed_positions = project_to_camera_frame(
-            image_space_input_positions + image_space_flow_deltas,
-            depth_image + image_space_depth_change)
-
-        camera_frame_input_positions_xyz = np.concatenate([
-            depth_image,
-            camera_frame_input_positions,
-        ],
-                                                          axis=2)
-
-        camera_frame_flowed_positions_xyz = np.concatenate([
-            depth_image + image_space_depth_change,
-            camera_frame_flowed_positions,
-        ],
-                                                           axis=2)
-
-        assert camera_frame_input_positions_xyz.shape == camera_frame_flowed_positions_xyz.shape, \
-            f"shape mismatch, {camera_frame_input_positions_xyz.shape} != {camera_frame_flowed_positions_xyz.shape}"
-
-        input_pointcloud = PointCloud(
-            camera_frame_input_positions_xyz.reshape(-1, 3))
-        flowed_pointcloud = PointCloud(
-            camera_frame_flowed_positions_xyz.reshape(-1, 3))
         return input_pointcloud, flowed_pointcloud
 
     def __getitem__(self, idx):

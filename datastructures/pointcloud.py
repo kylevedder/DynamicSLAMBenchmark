@@ -1,5 +1,5 @@
 import numpy as np
-
+import open3d as o3d
 from .se3 import SE3
 
 
@@ -61,6 +61,52 @@ class PointCloud():
 
     def __getitem__(self, idx):
         return self.points[idx]
+
+    @staticmethod
+    def from_image_space_points_and_depth(image_coordinates: np.ndarray,
+                                          image_coordinate_depths: np.ndarray,
+                                          intrinsics: dict) -> 'PointCloud':
+        assert image_coordinates.ndim == 2, f'image_space_points must be a 2D array, got {image_coordinates.ndim}'
+        assert image_coordinates.shape[
+            1] == 2, f'image_space_points must be a Nx2 array, got {image_coordinates.shape}'
+
+        assert image_coordinate_depths.ndim == 2, f'depth must be a 2D array, got {image_coordinate_depths.ndim}'
+        assert image_coordinate_depths.shape[
+            1] == 1, f'depth must be a Nx1 array, got {image_coordinate_depths.shape}'
+
+        # Under the pinhole camera model, the image space position is:
+
+        # IMG_X = f * X / Z + c_x, IMG_Y = f * Y / Z + c_y
+
+        # Rearranging, we get:
+        # X = (IMG_X - c_x) * Z / f, Y = (IMG_Y - c_y) * Z / f
+
+        focal_array = -np.array([intrinsics["fx"], intrinsics["fy"]])
+        image_center = np.array([intrinsics["cx"], intrinsics["cy"]])
+
+        world_xy = (image_coordinates.astype(np.float32) -
+                    image_center[None, :]
+                    ) * image_coordinate_depths / focal_array[None, :]
+        world_xyz = np.concatenate([image_coordinate_depths, world_xy], axis=1)
+
+        return PointCloud(world_xyz)
+
+    @staticmethod
+    def from_depth_image(depth: np.ndarray, intrinsics: dict) -> 'PointCloud':
+        assert depth.ndim == 2, f'depth must be a 2D array, got {depth.ndim}'
+
+        # X positions repeated for each row
+        x_positions = np.tile(np.arange(depth.shape[1]), (depth.shape[0], 1))
+        # Y positions repeated for each column
+        y_positions = np.tile(np.arange(depth.shape[0]), (depth.shape[1], 1)).T
+
+        image_coordinates = np.stack([x_positions, y_positions],
+                                     axis=2).astype(np.int32).reshape(-1, 2)
+
+        image_coordinate_depths = depth.reshape(-1, 1)
+
+        return PointCloud.from_image_space_points_and_depth(
+            image_coordinates, image_coordinate_depths, intrinsics)
 
     def transform(self, se3: SE3) -> 'PointCloud':
         assert isinstance(se3, SE3)
@@ -126,5 +172,4 @@ class PointCloud():
         return self.points.shape
 
     def to_o3d(self):
-        import open3d as o3d
         return o3d.geometry.PointCloud(o3d.utility.Vector3dVector(self.points))
