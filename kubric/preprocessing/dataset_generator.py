@@ -73,12 +73,13 @@ def unproject(coord, cam, depth):
 
     camera_plane = projected_pt @ tf.linalg.inv(tf.transpose(
         cam['intrinsics']))
-    camera_ball = camera_plane / tf.sqrt(
+    camera_plane_denominator = tf.sqrt(
         tf.reduce_sum(
             tf.square(camera_plane),
             axis=1,
             keepdims=True,
         ), )
+    camera_ball = camera_plane / camera_plane_denominator
     camera_ball *= tf.gather(tf.reshape(depth, [-1]), idx)[:, tf.newaxis]
 
     camera_ball = tf.concat(
@@ -89,7 +90,17 @@ def unproject(coord, cam, depth):
         axis=1,
     )
     points_3d = camera_ball @ tf.transpose(cam['matrix_world'])
-    breakpoint()
+
+    tf.print("VVVVVVVVVVVVVVVVVVVVV\nshp\n", shp)
+    tf.print("coord\n", coord)
+    tf.print("projected_pt\n", projected_pt)
+    tf.print("cam['intrinsics']\n", cam['intrinsics'])
+    tf.print("tf.linalg.inv(tf.transpose(cam['intrinsics']))\n", tf.linalg.inv(tf.transpose(cam['intrinsics'])))
+    tf.print("camera_plane\n", camera_plane)
+    tf.print("camera_plane_denominator\n", camera_plane_denominator)
+    tf.print("cam['matrix_world']\n", cam['matrix_world'])
+    tf.print("camera_ball\n", camera_ball, "\n^^^^^^^^^^^^^^^^^^^^^^^")
+
     return points_3d[:, :3] / points_3d[:, 3:]
 
 

@@ -72,9 +72,9 @@ for idx in range(len(dataset)):
     left_pointcloud_flowed_tp1 = left_pointcloud_flowed_tp1.mask_points(mask)
 
     # Transform pointclouds to world frame
-    left_pointcloud_t = left_pointcloud_t.transform(left_cam_pose_t)
-    left_pointcloud_flowed_tp1 = left_pointcloud_flowed_tp1.transform(
-        left_cam_pose_tp1)
+    # left_pointcloud_t = left_pointcloud_t.transform(left_cam_pose_t)
+    # left_pointcloud_flowed_tp1 = left_pointcloud_flowed_tp1.transform(
+    #     left_cam_pose_tp1)
 
     left_pc_o3d = left_pointcloud_t.to_o3d()
     left_pc_o3d.paint_uniform_color([color_scale[idx], 0, 0])
@@ -83,6 +83,8 @@ for idx in range(len(dataset)):
     left_pc_flowed_o3d = left_pointcloud_flowed_tp1.to_o3d()
     left_pc_flowed_o3d.paint_uniform_color([0, color_scale[idx], 0])
     add_geometry(left_pc_flowed_o3d)
+
+    # break
 
     # flow_lineset = make_lineset_from_flowed_pointcloud(left_pointcloud,
     #                                                    left_pointcloud_flowed)

@@ -130,11 +130,11 @@ class FlyingThings3D:
         image_space_input_positions = np.stack([x_positions, y_positions],
                                                axis=2).astype(np.float32)
 
-        input_pointcloud = PointCloud.from_image_space_points_and_depth(
+        input_pointcloud = PointCloud.from_pinhole_points_and_depth(
             image_space_input_positions.reshape(-1, 2),
             depth_image.reshape(-1, 1), self.intrinsics)
 
-        flowed_pointcloud = PointCloud.from_image_space_points_and_depth(
+        flowed_pointcloud = PointCloud.from_pinhole_points_and_depth(
             (image_space_input_positions + image_space_flow_deltas).reshape(
                 -1,
                 2), (depth_image + image_space_depth_change).reshape(-1, 1),

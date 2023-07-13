@@ -40,6 +40,28 @@ def from_fixed_array(array: np.ndarray) -> np.ndarray:
     return array[are_valid_points]
 
 
+def make_image_pixel_coordinate_grid(image_shape: tuple) -> np.ndarray:
+    assert len(
+        image_shape) == 2, f'image_shape must be a 2-tuple, got {image_shape}'
+    # X positions repeated for each row
+    x_positions = np.tile(np.arange(image_shape[1]), (image_shape[0], 1))
+    # Y positions repeated for each column
+    y_positions = np.tile(np.arange(image_shape[0]), (image_shape[1], 1)).T
+
+    image_coordinates = np.stack([x_positions, y_positions],
+                                 axis=2).astype(np.float32).reshape(-1, 2)
+    return image_coordinates
+
+
+def camera_to_world_coordiantes(points: np.ndarray) -> np.ndarray:
+    world_T_camera = np.array([
+        [0, 0, 1],
+        [-1, 0, 0],
+        [0, -1, 0],
+    ])
+    return (world_T_camera @ points.T).T
+
+
 class PointCloud():
 
     def __init__(self, points: np.ndarray) -> None:
@@ -63,9 +85,9 @@ class PointCloud():
         return self.points[idx]
 
     @staticmethod
-    def from_image_space_points_and_depth(image_coordinates: np.ndarray,
-                                          image_coordinate_depths: np.ndarray,
-                                          intrinsics: dict) -> 'PointCloud':
+    def from_pinhole_points_and_depth(image_coordinates: np.ndarray,
+                                      image_coordinate_depths: np.ndarray,
+                                      intrinsics: dict) -> 'PointCloud':
         assert image_coordinates.ndim == 2, f'image_space_points must be a 2D array, got {image_coordinates.ndim}'
         assert image_coordinates.shape[
             1] == 2, f'image_space_points must be a Nx2 array, got {image_coordinates.shape}'
@@ -74,39 +96,101 @@ class PointCloud():
         assert image_coordinate_depths.shape[
             1] == 1, f'depth must be a Nx1 array, got {image_coordinate_depths.shape}'
 
-        # Under the pinhole camera model, the image space position is:
+        assert image_coordinates.shape[0] == image_coordinate_depths.shape[
+            0], f'number of points in image_coordinates {image_coordinates.shape[0]} must match number of points in image_coordinate_depths {image_coordinate_depths.shape[0]}'
+        print("intrinsics", intrinsics)
 
-        # IMG_X = f * X / Z + c_x, IMG_Y = f * Y / Z + c_y
+        # Standard camera intrinsics matrix
+        K = np.array([
+            [intrinsics["fx"], 0, intrinsics["cx"]],
+            [0, intrinsics["fy"], intrinsics["cy"]],
+            [0, 0, 1],
+        ])
 
-        # Rearranging, we get:
-        # X = (IMG_X - c_x) * Z / f, Y = (IMG_Y - c_y) * Z / f
+        # These points are at the pixel locations of the image.
+        image_coordinate_points = np.concatenate(
+            [image_coordinates,
+             np.ones((len(image_coordinates), 1))], axis=1)
 
-        focal_array = -np.array([intrinsics["fx"], intrinsics["fy"]])
-        image_center = np.array([intrinsics["cx"], intrinsics["cy"]])
+        # Camera plane is the plane of ray points with a depth of 1 in the camera coordinate frame.
+        camera_plane_points = image_coordinate_points @ np.linalg.inv(K.T)
 
-        world_xy = (image_coordinates.astype(np.float32) -
-                    image_center[None, :]
-                    ) * image_coordinate_depths / focal_array[None, :]
-        world_xyz = np.concatenate([image_coordinate_depths, world_xy], axis=1)
+        # Multiplying by the depth scales the ray of each point in the camera coordinate frame to
+        # the distance measured by the depth image.
+        world_points_camera_coords = camera_plane_points * image_coordinate_depths
 
-        return PointCloud(world_xyz)
+        return PointCloud(
+            camera_to_world_coordiantes(world_points_camera_coords))
 
     @staticmethod
-    def from_depth_image(depth: np.ndarray, intrinsics: dict) -> 'PointCloud':
+    def from_pinhole_depth_image(depth: np.ndarray,
+                                 intrinsics: dict) -> 'PointCloud':
         assert depth.ndim == 2, f'depth must be a 2D array, got {depth.ndim}'
 
-        # X positions repeated for each row
-        x_positions = np.tile(np.arange(depth.shape[1]), (depth.shape[0], 1))
-        # Y positions repeated for each column
-        y_positions = np.tile(np.arange(depth.shape[0]), (depth.shape[1], 1)).T
-
-        image_coordinates = np.stack([x_positions, y_positions],
-                                     axis=2).astype(np.int32).reshape(-1, 2)
+        image_coordinates = make_image_pixel_coordinate_grid(depth.shape)
 
         image_coordinate_depths = depth.reshape(-1, 1)
 
-        return PointCloud.from_image_space_points_and_depth(
+        return PointCloud.from_pinhole_points_and_depth(
             image_coordinates, image_coordinate_depths, intrinsics)
+
+    @staticmethod
+    def from_ball_depth_image(depth: np.ndarray,
+                              intrinsics: dict) -> 'PointCloud':
+        assert depth.ndim == 2, f'depth must be a 2D array, got {depth.ndim}'
+
+        # Camera intrinsics matrix converted to Normalized Device Coordinates (NDC)
+        K = np.array([
+            [intrinsics["fx"] / depth.shape[1], 0, 0.5],
+            [0, intrinsics["fy"] / depth.shape[0], 0.5],
+            [0, 0, 1],
+        ])
+
+        image_coordinate_depths = depth.reshape(-1, 1)
+        image_coordinates = make_image_pixel_coordinate_grid(depth.shape)
+        # Convert from pixels to raster space with the + 0.5, then to NDC space
+        image_coordinates = (image_coordinates + 0.5) / np.array(
+            depth.shape)[None, :]
+
+        # These points are at the pixel locations of the image.
+        image_coordinate_points = np.concatenate(
+            [image_coordinates,
+             np.ones((len(image_coordinates), 1))], axis=1)
+
+        # Camera plane is the plane of ray points with a depth of 1 in the camera coordinate frame.
+        camera_plane_points = image_coordinate_points @ np.linalg.inv(K.T)
+
+        # Normalize the ray vectors to be unit length to form the camera plane.
+        camera_ball_points = camera_plane_points / np.linalg.norm(
+            camera_plane_points, axis=1, keepdims=True)
+
+        # Multiplying by the depth scales the ray of each point in the camera coordinate frame to
+        # the distance measured by the depth image.
+        world_points_camera_coords = camera_ball_points * image_coordinate_depths
+
+        return PointCloud(
+            camera_to_world_coordiantes(world_points_camera_coords))
+
+    @staticmethod
+    def from_depth_image_o3d(depth: np.ndarray,
+                             intrinsics: dict) -> 'PointCloud':
+        standard_frame_extrinsics = np.array([
+            [0, -1, 0, 0],
+            [0, 0, -1, 0],
+            [1, 0, 0, 0],
+            [0, 0, 0, 1],
+        ])
+        o3d_depth = o3d.geometry.Image(depth)
+        o3d_intrinsics = o3d.camera.PinholeCameraIntrinsic()
+        o3d_intrinsics.set_intrinsics(width=depth.shape[1],
+                                      height=depth.shape[0],
+                                      fx=intrinsics["fx"],
+                                      fy=intrinsics["fy"],
+                                      cx=intrinsics["cx"],
+                                      cy=intrinsics["cy"])
+        o3d_pc = o3d.geometry.PointCloud.create_from_depth_image(
+            o3d_depth, o3d_intrinsics, standard_frame_extrinsics)
+        return PointCloud(np.asarray(o3d_pc.points))
 
     def transform(self, se3: SE3) -> 'PointCloud':
         assert isinstance(se3, SE3)
