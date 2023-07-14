@@ -1,7 +1,8 @@
 from pathlib import Path
 import pickle
-from datastructures import SE3, PointCloud
+from datastructures import SE3, PointCloud, ParticleFrame
 import numpy as np
+import scipy.interpolate as interpolate
 
 
 class KubricSequence():
@@ -11,7 +12,7 @@ class KubricSequence():
 
     @property
     def intrinsics(self):
-        focal_length = self.data["camera"]["focal_length"] *2
+        focal_length = self.data["camera"]["focal_length"] * 2
         input_size_x = self.data["metadata"]["width"]
         input_size_y = self.data["metadata"]["height"]
         sensor_width = self.data["camera"]["sensor_width"]
@@ -36,19 +37,36 @@ class KubricSequence():
             data = pickle.load(f)
         return data
 
-    def _project_to_camera_frame(self, image_space_positions, depth_image):
-        # As noted on the FlyingThings3D page, the focal lengths should actually be negative,
-        # but they do not negate them for consistency; many packages like Open3D expect positive.
-        focal_array = np.array([self.intrinsics["fx"], self.intrinsics["fy"]])
+    def _image_space_to_depth(self,
+                              image_space_positions,
+                              depth_entries,
+                              interpolation_type="nearest"):
+        assert image_space_positions.shape[
+            1] == 2, f"image_space_positions must have shape (N, 2), got {image_space_positions.shape}"
+        assert depth_entries.shape[
+            2] == 1, f"depth_image must have shape (H, W, 1), got {depth_entries.shape}"
 
-        center_array = np.array([self.intrinsics["cx"], self.intrinsics["cy"]])
+        depth_entries = depth_entries[:, :, 0]
+        xs = np.arange(depth_entries.shape[0])
+        ys = np.arange(depth_entries.shape[1])
 
-        # image space = focal * camera space / depth
-        # image space * depth / focal = camera space
+        depth_interpolator = interpolate.RegularGridInterpolator(
+            (xs, ys), depth_entries, bounds_error=False)
 
-        image_space_centered = image_space_positions - center_array[None,
-                                                                    None, :]
-        return image_space_centered * depth_image / focal_array[None, None, :]
+        x_queries = image_space_positions[:, 0]
+        y_queries = image_space_positions[:, 1]
+
+        if interpolation_type == "nearest":
+            x_queries = np.round(x_queries)
+            y_queries = np.round(y_queries)
+
+        depths = depth_interpolator((
+            y_queries,
+            x_queries,
+        ))
+
+        # add trailing dimension
+        return depths[:, np.newaxis]
 
     def __getitem__(self, idx):
         rgb = self.data["rgb_video"][idx]
@@ -56,16 +74,36 @@ class KubricSequence():
 
         position = self.data["camera"]["positions"][idx]
         quaternion = self.data["camera"]["quaternions"][idx]
+        target_points = self.data["target_points"][:, idx]
+        is_occluded = self.data["occluded"][:, idx]
+
+        unoccluded_target_points = target_points[~is_occluded]
+
+        # This may return NaNs if the target points are off camera, which is why we need to filter for only unoccluded particles.
+        unoccluded_target_depths = self._image_space_to_depth(
+            unoccluded_target_points, depth)
+
+        assert len(unoccluded_target_depths) == len(unoccluded_target_points), \
+            f"target_depths and unoccluded_particle_positions have different lengths, {len(unoccluded_target_depths)} != {len(unoccluded_particle_positions)}"
+        assert np.isfinite(unoccluded_target_depths).all(), \
+            f"target_depths contains NaNs, {unoccluded_target_depths}"
 
         pose = SE3.from_rot_w_x_y_z_translation_x_y_z(*quaternion, *position)
-        pointcloud_pinhole = PointCloud.from_pinhole_depth_image(depth[:, :, 0],
-                                                 self.intrinsics)
-        pointcloud_ball = PointCloud.from_ball_depth_image(depth[:, :, 0],
-                                                      self.intrinsics)
+        pointcloud = PointCloud.from_field_of_view_depth_image(
+            depth[:, :, 0], self.intrinsics)
+
+        unoccluded_target_points_3d = PointCloud.from_field_of_view_points_and_depth(
+            unoccluded_target_points, unoccluded_target_depths,
+            depth.shape[:2], self.intrinsics)
+
+        target_points_3d = np.zeros((len(target_points), 3))
+        target_points_3d[~is_occluded] = unoccluded_target_points_3d.points
+
+        particle_frame = ParticleFrame(target_points_3d, is_occluded)
         return {
             "pose": pose,
-            "pointcloud": pointcloud_ball,
-            "pointcloud_pinhole": pointcloud_pinhole,
+            "pointcloud": pointcloud,
+            "particles": particle_frame,
             "rgb": rgb
         }
 

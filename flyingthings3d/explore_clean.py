@@ -20,7 +20,7 @@ vis.add_geometry(world_frame)
 # Set point size
 vis.get_render_option().point_size = 0.1
 # Set background color gray
-vis.get_render_option().background_color = np.array([0.5, 0.5, 0.5])
+# vis.get_render_option().background_color = np.array([0.5, 0.5, 0.5])
 
 
 def draw_line_between_cameras(left_cam_pose: SE3, right_cam_pose: SE3):

@@ -135,30 +135,29 @@ class PointCloud():
             image_coordinates, image_coordinate_depths, intrinsics)
 
     @staticmethod
-    def from_ball_depth_image(depth: np.ndarray,
-                              intrinsics: dict) -> 'PointCloud':
-        assert depth.ndim == 2, f'depth must be a 2D array, got {depth.ndim}'
+    def from_field_of_view_ndc_points_and_depth(
+            ndc_coordinates: np.ndarray, ndc_coordinate_depths: np.ndarray,
+            fx: float, fy: float) -> 'PointCloud':
+
+        assert ndc_coordinates.ndim == 2, f'ndc_coordinates must be a 2D array, got {ndc_coordinates.ndim}'
+        assert (ndc_coordinates <= 1.0).all(
+        ), f'ndc_coordinates must be in NDC space (<= 1), got {ndc_coordinates}'
+        assert (ndc_coordinates >= 0.0).all(
+        ), f'ndc_coordinates must be in NDC space (>= 0), got {ndc_coordinates}'
+
+        ndc_coordinate_points = np.concatenate(
+            [ndc_coordinates,
+             np.ones((len(ndc_coordinates), 1))], axis=1)
 
         # Camera intrinsics matrix converted to Normalized Device Coordinates (NDC)
         K = np.array([
-            [intrinsics["fx"] / depth.shape[1], 0, 0.5],
-            [0, intrinsics["fy"] / depth.shape[0], 0.5],
+            [fx, 0, 0.5],
+            [0, fy, 0.5],
             [0, 0, 1],
         ])
 
-        image_coordinate_depths = depth.reshape(-1, 1)
-        image_coordinates = make_image_pixel_coordinate_grid(depth.shape)
-        # Convert from pixels to raster space with the + 0.5, then to NDC space
-        image_coordinates = (image_coordinates + 0.5) / np.array(
-            depth.shape)[None, :]
-
-        # These points are at the pixel locations of the image.
-        image_coordinate_points = np.concatenate(
-            [image_coordinates,
-             np.ones((len(image_coordinates), 1))], axis=1)
-
         # Camera plane is the plane of ray points with a depth of 1 in the camera coordinate frame.
-        camera_plane_points = image_coordinate_points @ np.linalg.inv(K.T)
+        camera_plane_points = ndc_coordinate_points @ np.linalg.inv(K.T)
 
         # Normalize the ray vectors to be unit length to form the camera plane.
         camera_ball_points = camera_plane_points / np.linalg.norm(
@@ -166,10 +165,53 @@ class PointCloud():
 
         # Multiplying by the depth scales the ray of each point in the camera coordinate frame to
         # the distance measured by the depth image.
-        world_points_camera_coords = camera_ball_points * image_coordinate_depths
+        world_points_camera_coords = camera_ball_points * ndc_coordinate_depths
 
         return PointCloud(
             camera_to_world_coordiantes(world_points_camera_coords))
+
+    @staticmethod
+    def from_field_of_view_points_and_depth(image_coordinates: np.ndarray,
+                                            depths: np.ndarray,
+                                            image_shape: tuple,
+                                            intrinsics: dict) -> 'PointCloud':
+        assert image_coordinates.ndim == 2, f'image_space_points must be a 2D array, got {image_coordinates.ndim}'
+        assert image_coordinates.shape[
+            1] == 2, f'image_space_points must be a Nx2 array, got {image_coordinates.shape}'
+
+        assert depths.ndim == 2, f'depth must be a 2D array, got {depths.ndim}'
+        assert depths.shape[
+            1] == 1, f'depth must be a Nx1 array, got {depths.shape}'
+
+        assert image_coordinates.shape[0] == depths.shape[
+            0], f'number of points in image_coordinates {image_coordinates.shape[0]} must match number of points in image_coordinate_depths {depths.shape[0]}'
+        print("intrinsics", intrinsics)
+        assert len(image_shape
+                   ) == 2, f'image_shape must be a 2-tuple, got {image_shape}'
+
+        fx = intrinsics["fx"] / image_shape[1]
+        fy = intrinsics["fy"] / image_shape[0]
+
+        # Convert from pixels to raster space with the + 0.5, then to NDC space
+        ndc_coordinates = (image_coordinates +
+                           0.5) / np.array(image_shape)[None, :]
+
+        return PointCloud.from_field_of_view_ndc_points_and_depth(
+            ndc_coordinates, depths, fx, fy)
+
+    @staticmethod
+    def from_field_of_view_depth_image(depth: np.ndarray,
+                                       intrinsics: dict) -> 'PointCloud':
+        """
+        See: https://link.springer.com/article/10.1007/pl00013269
+        Difference is the conversion to NDC and normalization of the camera plane points
+          to unit length before scaling by depth.
+        """
+        assert depth.ndim == 2, f'depth must be a 2D array, got {depth.ndim}'
+        image_coordinates = make_image_pixel_coordinate_grid(depth.shape)
+        depths = depth.reshape(-1, 1)
+        return PointCloud.from_field_of_view_points_and_depth(
+            image_coordinates, depths, depth.shape, intrinsics)
 
     @staticmethod
     def from_depth_image_o3d(depth: np.ndarray,
