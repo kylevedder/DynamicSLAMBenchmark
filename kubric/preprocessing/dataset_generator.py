@@ -33,13 +33,15 @@ def project_point(cam, point3d, num_frames):
     homo_intrinsics = tf.concat([cam['intrinsics'], homo_intrinsics], axis=2)
 
     point4d = tf.concat([point3d, tf.ones_like(point3d[:, :, 0:1])], axis=2)
-    projected = tf.matmul(point4d, tf.transpose(homo_transform, (0, 2, 1)))
-    projected = tf.matmul(projected, tf.transpose(homo_intrinsics, (0, 2, 1)))
+    projected_local = tf.matmul(point4d, tf.transpose(homo_transform,
+                                                      (0, 2, 1)))
+    projected = tf.matmul(projected_local,
+                          tf.transpose(homo_intrinsics, (0, 2, 1)))
     image_coords = projected / projected[:, :, 2:3]
     image_coords = tf.concat(
         [image_coords[:, :, :2],
          tf.sign(projected[:, :, 2:])], axis=2)
-    return image_coords
+    return image_coords, projected_local
 
 
 def unproject(coord, cam, depth):
@@ -91,15 +93,15 @@ def unproject(coord, cam, depth):
     )
     points_3d = camera_ball @ tf.transpose(cam['matrix_world'])
 
-    tf.print("VVVVVVVVVVVVVVVVVVVVV\nshp\n", shp)
-    tf.print("coord\n", coord)
-    tf.print("projected_pt\n", projected_pt)
-    tf.print("cam['intrinsics']\n", cam['intrinsics'])
-    tf.print("tf.linalg.inv(tf.transpose(cam['intrinsics']))\n", tf.linalg.inv(tf.transpose(cam['intrinsics'])))
-    tf.print("camera_plane\n", camera_plane)
-    tf.print("camera_plane_denominator\n", camera_plane_denominator)
-    tf.print("cam['matrix_world']\n", cam['matrix_world'])
-    tf.print("camera_ball\n", camera_ball, "\n^^^^^^^^^^^^^^^^^^^^^^^")
+    # tf.print("VVVVVVVVVVVVVVVVVVVVV\nshp\n", shp)
+    # tf.print("coord\n", coord)
+    # tf.print("projected_pt\n", projected_pt)
+    # tf.print("cam['intrinsics']\n", cam['intrinsics'])
+    # tf.print("tf.linalg.inv(tf.transpose(cam['intrinsics']))\n", tf.linalg.inv(tf.transpose(cam['intrinsics'])))
+    # tf.print("camera_plane\n", camera_plane)
+    # tf.print("camera_plane_denominator\n", camera_plane_denominator)
+    # tf.print("cam['matrix_world']\n", cam['matrix_world'])
+    # tf.print("camera_ball\n", camera_ball, "\n^^^^^^^^^^^^^^^^^^^^^^^")
 
     return points_3d[:, :3] / points_3d[:, 3:]
 
@@ -151,10 +153,13 @@ def reproject(coords, camera, camera_pos, num_frames, bbox=None):
         ), )
 
     # Project each point back to the image using the camera.
-    projections = project_point(camera, world_coords, num_frames)
+    projections, points_3d = project_point(camera, world_coords, num_frames)
+
+    tf.print("reproject points_3d:", points_3d.shape, points_3d)
 
     return (
         tf.transpose(projections, (1, 0, 2)),
+        tf.transpose(points_3d[:, :, :3], (1, 0, 2)),
         tf.transpose(depths),
         tf.transpose(world_coords, (1, 0, 2)),
     )
@@ -365,7 +370,7 @@ def single_object_reproject(
 
   """
     # Finally, reproject
-    reproj, depth_proj, world_pos = reproject(
+    reproj, reproj_3d, depth_proj, world_pos = reproject(
         pt,
         camera,
         cam_positions,
@@ -411,7 +416,7 @@ def single_object_reproject(
         # world is convex; can't face away from cam.
         faces_away = tf.zeros([tf.shape(pt)[0], num_frames], dtype=tf.bool)
 
-    return obj_reproj, tf.logical_or(faces_away, obj_occ)
+    return obj_reproj, reproj_3d, tf.logical_or(faces_away, obj_occ)
 
 
 def get_num_to_sample(counts, max_seg_id, max_sampled_frac, tracks_to_sample):
@@ -524,6 +529,7 @@ def track_points(
 
   """
     chosen_points = []
+    all_points_3d = []
     all_reproj = []
     all_occ = []
 
@@ -681,7 +687,7 @@ def track_points(
             frame_for_pt = pt_coords[..., 0]
 
         # Finally, compute the reprojections for this particular object.
-        obj_reproj, obj_occ = tf.cond(
+        obj_reproj, obj_points_3d, obj_occ = tf.cond(
             tf.shape(pt)[0] > 0,
             functools.partial(
                 single_object_reproject,
@@ -702,7 +708,10 @@ def track_points(
             ),
             lambda:  # pylint: disable=g-long-lambda
             (tf.zeros([0, num_frames, 2], dtype=tf.float32),
+             tf.zeros([0, num_frames, 3], dtype=tf.float32),
              tf.zeros([0, num_frames], dtype=tf.bool)))
+
+        all_points_3d.append(obj_points_3d)
         all_reproj.append(obj_reproj)
         all_occ.append(obj_occ)
 
@@ -716,6 +725,11 @@ def track_points(
         axis=0)
     wd = wd[tf.newaxis, tf.newaxis, :]
     coord_multiplier = [num_frames, input_size[0], input_size[1]]
+
+    tf.print("Before concat:", type(all_points_3d))
+    tf.print("all_points_3d shapes:", [e.shape for e in all_points_3d])
+    all_points_3d = tf.concat(all_points_3d, axis=0)
+
     all_reproj = tf.concat(all_reproj, axis=0)
     # We need to extract x,y, but the format of the window is [t1,y1,x1,t2,y2,x2]
     window_size = wd[:, :, 5:3:-1] - wd[:, :, 2:0:-1]
@@ -736,8 +750,8 @@ def track_points(
     # Note: all_reproj is in (x,y) format, but chosen_points is in (z,y,x) format
 
     return tf.cast(chosen_points,
-                   tf.float32), tf.cast(all_reproj,
-                                        tf.float32), all_occ, depth_map
+                   tf.float32), tf.cast(all_points_3d, tf.float32), tf.cast(
+                       all_reproj, tf.float32), all_occ, depth_map
 
 
 def _get_distorted_bounding_box(
@@ -832,7 +846,7 @@ def add_tracks(data,
                                   dtype=tf.int32,
                                   shape=[4])
 
-    query_points, target_points, occluded, depth_map = track_points(
+    query_points, target_points_3d, target_points, occluded, depth_map = track_points(
         data['object_coordinates'], data['depth'],
         data['metadata']['depth_range'], data['segmentations'], data['normal'],
         data['instances']['bboxes_3d'], data['instances']['quaternions'],
@@ -871,6 +885,7 @@ def add_tracks(data,
     res = {
         'query_points': query_points,
         'target_points': target_points,
+        'target_points_3d': target_points_3d,
         'occluded': occluded,
         'depth_video': depth_map,
         'rgb_video': video / (255. / 2.) - 1.,
@@ -1024,9 +1039,8 @@ def save_sequence_as_pkl(save_dir: Path, idx: int, data):
     # Print file size on disk of saved file
     print(f'Saved {save_file} ({save_file.stat().st_size / 1e6:.2f} MB)')
 
-
-    disp_rgb = plot_tracks(data['rgb_video'] * .5 + .5,
-                           data['target_points'], data['occluded'])
+    disp_rgb = plot_tracks(data['rgb_video'] * .5 + .5, data['target_points'],
+                           data['occluded'])
     media.write_video(video_file, disp_rgb, fps=10)
 
 
@@ -1039,7 +1053,7 @@ def main(save_directory: Path = Path() / "generated_data"):
                                       random_crop=False))
     for i, data in enumerate(ds):
         save_sequence_as_pkl(save_directory, i, data)
-        
+
         # disp_depth = plot_tracks(data['depth_video'] * .5 + .5,
         #                          data['target_points'], data['occluded'])
         # media.write_video(f'{i}_depth.mp4', disp_depth, fps=10)

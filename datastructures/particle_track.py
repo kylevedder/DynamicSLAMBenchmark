@@ -5,31 +5,41 @@ import open3d as o3d
 
 class ParticlePosition():
 
-    def __init__(self, x, y, z):
+    def __init__(self, x: float, y: float, z: float, occluded: bool = False):
         self.x = x
         self.y = y
         self.z = z
+        self.occluded = occluded
+
+    def __repr__(self):
+        return f"ParticlePosition(x={self.x}, y={self.y}, z={self.z}, occluded={self.occluded})"
 
 
-class ObstructedParticle(ParticlePosition):
+class UninitializedParticle(ParticlePosition):
     """
-    Subclass of ParticlePosition where the particle is obstructed by an object.
+    Subclass of ParticlePosition where the particle is uninitialized in its position (e.g. off camera).
     """
 
     def __init__(self):
         pass
 
+    def __repr__(self):
+        return "UninitializedParticle()"
+
 
 class ParticleFrame():
 
-    def __init__(self, particle_positions: np.array, is_occluded: np.array):
+    def __init__(self, particle_positions: np.array,
+                 is_occluded: np.ndarray[bool],
+                 is_initialized: np.ndarray[bool]):
         assert len(particle_positions) == len(is_occluded), \
             f"particle_positions and is_obstructed have different lengths, {len(particle_positions)} != {len(is_occluded)}"
 
         self.is_occluded = is_occluded
+        self.is_initialized = is_initialized
         self.particle_positions = np.array([
-            ParticlePosition(*p) if not o else ObstructedParticle()
-            for p, o in zip(particle_positions, is_occluded)
+            ParticlePosition(*p, o) if i else UninitializedParticle()
+            for p, o, i in zip(particle_positions, is_occluded, is_initialized)
         ])
 
     def __getitem__(self, idx):
@@ -42,12 +52,14 @@ class ParticleFrame():
     def __len__(self):
         return len(self.particle_positions)
 
-    def get_unobstructed_particles(self) -> np.array:
-        return self.particle_positions[~self.is_occluded]
+    def get_unoccluded_particles(self) -> np.ndarray[ParticlePosition]:
+        return self.particle_positions[~self.is_occluded & self.is_initialized]
 
-    def set_unobstructed_particles(self,
-                                   new_positions: List[ParticlePosition]):
-        self.particle_positions[~self.is_occluded] = new_positions
+    def set_unoccluded_particles(self, new_positions: List[ParticlePosition]):
+        assert len(new_positions) == len(self.get_unoccluded_particles()), \
+            f"new_positions and unoccluded_particles have different lengths, {len(new_positions)} != {len(self.get_unoccluded_particles())}"
+        self.particle_positions[~self.is_occluded
+                                & self.is_initialized] = new_positions
 
     def to_o3d(self) -> List[o3d.geometry.TriangleMesh]:
 
@@ -62,5 +74,5 @@ class ParticleFrame():
         # Make a sphere for each particle
         return [
             make_sphere_at_location(p)
-            for p in self.get_unobstructed_particles()
+            for p in self.get_unoccluded_particles()
         ]

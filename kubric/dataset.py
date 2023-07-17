@@ -67,6 +67,14 @@ class KubricSequence():
 
         # add trailing dimension
         return depths[:, np.newaxis]
+    
+    def _camera_to_world_coordiantes(self, points: np.ndarray) -> np.ndarray:
+        world_T_camera = np.array([
+            [0, 0, -1],
+            [-1, 0, 0],
+            [0, 1, 0],
+        ])
+        return (world_T_camera @ points.T).T
 
     def __getitem__(self, idx):
         rgb = self.data["rgb_video"][idx]
@@ -74,32 +82,17 @@ class KubricSequence():
 
         position = self.data["camera"]["positions"][idx]
         quaternion = self.data["camera"]["quaternions"][idx]
-        target_points = self.data["target_points"][:, idx]
+        # target_points = self.data["target_points"][:, idx]
+        target_points_3d = self.data["target_points_3d"][:, idx]
+        target_points_3d = self._camera_to_world_coordiantes(target_points_3d)
         is_occluded = self.data["occluded"][:, idx]
-
-        unoccluded_target_points = target_points[~is_occluded]
-
-        # This may return NaNs if the target points are off camera, which is why we need to filter for only unoccluded particles.
-        unoccluded_target_depths = self._image_space_to_depth(
-            unoccluded_target_points, depth)
-
-        assert len(unoccluded_target_depths) == len(unoccluded_target_points), \
-            f"target_depths and unoccluded_particle_positions have different lengths, {len(unoccluded_target_depths)} != {len(unoccluded_particle_positions)}"
-        assert np.isfinite(unoccluded_target_depths).all(), \
-            f"target_depths contains NaNs, {unoccluded_target_depths}"
 
         pose = SE3.from_rot_w_x_y_z_translation_x_y_z(*quaternion, *position)
         pointcloud = PointCloud.from_field_of_view_depth_image(
             depth[:, :, 0], self.intrinsics)
-
-        unoccluded_target_points_3d = PointCloud.from_field_of_view_points_and_depth(
-            unoccluded_target_points, unoccluded_target_depths,
-            depth.shape[:2], self.intrinsics)
-
-        target_points_3d = np.zeros((len(target_points), 3))
-        target_points_3d[~is_occluded] = unoccluded_target_points_3d.points
-
-        particle_frame = ParticleFrame(target_points_3d, is_occluded)
+        
+        particle_frame = ParticleFrame(target_points_3d, is_occluded,
+                                       np.ones_like(is_occluded, dtype=bool))
         return {
             "pose": pose,
             "pointcloud": pointcloud,
