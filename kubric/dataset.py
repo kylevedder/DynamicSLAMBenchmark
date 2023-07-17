@@ -1,6 +1,6 @@
 from pathlib import Path
 import pickle
-from datastructures import SE3, PointCloud, ParticleFrame
+from datastructures import SE3, PointCloud, ParticleFrame, CameraProjection, CameraModel, RGBImage
 import numpy as np
 import scipy.interpolate as interpolate
 
@@ -77,7 +77,9 @@ class KubricSequence():
         return (self.world_T_camera @ points.T).T
 
     def _get_rgb(self, idx):
-        return self.data["rgb_video"][idx]
+        rgb = self.data["rgb_video"][idx]
+        rgb = (rgb + 1.0) / 2.0
+        return RGBImage(rgb)
 
     def _get_pose(self, idx):
         position = self.data["camera"]["positions"][idx]
@@ -87,12 +89,11 @@ class KubricSequence():
         return blender_pose.compose(
             SE3(np.linalg.inv(self.world_T_camera), np.zeros(3)))
 
-    def _get_pointcloud(self, idx):
+    def _get_pointcloud(self, idx, camera_projection: CameraProjection):
         depth = self.data["depth_video"][idx]
-        return PointCloud.from_field_of_view_depth_image(
-            depth[:, :, 0], self.intrinsics)
+        return PointCloud.from_depth_image(depth[:, :, 0], camera_projection)
 
-    def _get_particle_frame(self, idx):
+    def _get_particle_frame(self, idx) -> ParticleFrame:
         is_occluded = self.data["occluded"][:, idx]
         blender_target_points_3d = self.data["target_points_3d"][:, idx]
         world_target_points_3d = self._camera_to_world_coordiantes(
@@ -100,13 +101,22 @@ class KubricSequence():
         return ParticleFrame(world_target_points_3d, is_occluded,
                              np.ones_like(is_occluded, dtype=bool))
 
-    def __getitem__(self, idx):
+    def _get_camera_to_image(self, idx):
+        return CameraProjection(**self.intrinsics,
+                                camera_model=CameraModel.FIELD_OF_VIEW)
 
+    def __getitem__(self, idx):
+        rgb_image = self._get_rgb(idx)
+        pose = self._get_pose(idx)
+        camera_projection = self._get_camera_to_image(idx)
+        particles = self._get_particle_frame(idx)
+        pointcloud = self._get_pointcloud(idx, camera_projection)
         return {
-            "rgb": self._get_rgb(idx),
-            "pose": self._get_pose(idx),
-            "pointcloud": self._get_pointcloud(idx),
-            "particles": self._get_particle_frame(idx)
+            "pose": pose,
+            "camera_projection": camera_projection,
+            "rgb": rgb_image,
+            "pointcloud": pointcloud,
+            "particles": particles,
         }
 
 

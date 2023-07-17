@@ -1,7 +1,39 @@
-from typing import Dict
+import numpy as np
+from typing import Dict, List
 
-from pointcloud import PointCloud
-from rgb_image import RGBImage
+from .pointcloud import PointCloud
+from .rgb_image import RGBImage
+from .se3 import SE3
+
+
+class RawScene():
+    """
+    This class contains only the raw percepts from a sequence. Its goal is to 
+    describe the scene as it is observed by the sensors; it does not contain
+    any other information such as motion descriptions.
+
+    These percepts are multi-modal, and may not be time sync'd. As an example,
+    in many AVs, the cameras run at 30 or 60 Hz while the lidar runs at 10 Hz.
+    Thus, each percept is recorded as a lookup table from timestamps to the
+    percept. We solve the time sync problem by pulling the most recent percept
+    from each modality when requesting all percepts for a given timestep.
+
+    These percept modalities are:
+        - RGB
+        - PointClouds
+
+    Additionally, we store frame conversions for each percept. At a minumum, we
+    need:
+        - RGB -> PointCloud (Ego Frame)
+        - PointCloud (Ego Frame) -> Global Frame
+    """
+
+    def __init__(self, pointcloud_lookup: Dict[int, PointCloud],
+                 rgb_image_lookup: Dict[int, RGBImage],
+                 world_T_ego_lookup: Dict[int, SE3], rgb_T_ego_lookup: Dict[int,
+                                                                            SE3]):
+        pass
+
 
 class SceneSequence():
     """
@@ -29,6 +61,10 @@ class SceneSequence():
     multi-frame (particle tracking) or single-frame (scene flow).  
     """
 
-    def __init__(self, pointclouds : Dict[int, PointCloud], rgb_images : Dict[int, RGBImage], particle_positions: Dict[int, ParticlePosition], frame_conversions: Dict[int, SE3], frame_timestamps: Dict[int, float]):
+    def __init__(self, pointclouds: Dict[int, PointCloud],
+                 rgb_images: Dict[int, RGBImage],
+                 particle_positions: Dict[int, np.ndarray],
+                 frame_conversions: Dict[int,
+                                         SE3], frame_timestamps: Dict[int,
+                                                                      float]):
         pass
-

@@ -42,6 +42,14 @@ class ParticleFrame():
         self.particle_positions[~self.is_occluded
                                 & self.is_initialized] = new_positions
 
+    def get_initialized_particles(self) -> np.ndarray:
+        return self.particle_positions[self.is_initialized]
+
+    def set_initialized_particles(self, new_positions: np.ndarray):
+        assert len(new_positions) == len(self.get_initialized_particles()), \
+            f"new_positions and initialized_particles have different lengths, {len(new_positions)} != {len(self.get_initialized_particles())}"
+        self.particle_positions[self.is_initialized] = new_positions
+
     def to_o3d(self) -> List[o3d.geometry.TriangleMesh]:
 
         def make_sphere_at_location(particle_position: np.ndarray):

@@ -35,6 +35,8 @@ def project_point(cam, point3d, num_frames):
     point4d = tf.concat([point3d, tf.ones_like(point3d[:, :, 0:1])], axis=2)
     projected_local = tf.matmul(point4d, tf.transpose(homo_transform,
                                                       (0, 2, 1)))
+    
+    tf.print("homo_intrinsics", homo_intrinsics)
     projected = tf.matmul(projected_local,
                           tf.transpose(homo_intrinsics, (0, 2, 1)))
     image_coords = projected / projected[:, :, 2:3]

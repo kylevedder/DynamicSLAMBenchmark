@@ -2,7 +2,7 @@ from pathlib import Path
 import loaders
 import numpy as np
 
-from datastructures import SE3, PointCloud
+from datastructures import SE3, PointCloud, CameraProjection, CameraModel
 import matplotlib.pyplot as plt
 import open3d as o3d
 from typing import Tuple, List, Dict, Any
@@ -129,16 +129,18 @@ class FlyingThings3D:
         # Stack the x and y positions into a 3D array of shape (H, W, 2)
         image_space_input_positions = np.stack([x_positions, y_positions],
                                                axis=2).astype(np.float32)
+        
+        camera_projection = CameraProjection(**self.intrinsics, camera_model=CameraModel.PINHOLE)
 
-        input_pointcloud = PointCloud.from_pinhole_points_and_depth(
+        input_pointcloud = PointCloud.from_points_and_depth(
             image_space_input_positions.reshape(-1, 2),
-            depth_image.reshape(-1, 1), self.intrinsics)
+            depth_image.reshape(-1, 1), camera_projection)
 
-        flowed_pointcloud = PointCloud.from_pinhole_points_and_depth(
+        flowed_pointcloud = PointCloud.from_points_and_depth(
             (image_space_input_positions + image_space_flow_deltas).reshape(
                 -1,
                 2), (depth_image + image_space_depth_change).reshape(-1, 1),
-            self.intrinsics)
+            camera_projection)
 
         return input_pointcloud, flowed_pointcloud
 
