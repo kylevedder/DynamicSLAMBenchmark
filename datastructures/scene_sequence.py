@@ -29,6 +29,6 @@ class SceneSequence():
     multi-frame (particle tracking) or single-frame (scene flow).  
     """
 
-    def __init__(self, pointclouds : Dict[int, PointCloud], rgb_images : Dict[int, RGBImage]):
+    def __init__(self, pointclouds : Dict[int, PointCloud], rgb_images : Dict[int, RGBImage], particle_positions: Dict[int, ParticlePosition], frame_conversions: Dict[int, SE3], frame_timestamps: Dict[int, float]):
         pass
 

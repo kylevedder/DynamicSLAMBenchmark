@@ -9,6 +9,11 @@ class KubricSequence():
 
     def __init__(self, data_file: Path):
         self.data = self._load_pkl(data_file)
+        self.world_T_camera = np.array([
+            [0, 0, -1],
+            [-1, 0, 0],
+            [0, 1, 0],
+        ])
 
     @property
     def intrinsics(self):
@@ -67,14 +72,9 @@ class KubricSequence():
 
         # add trailing dimension
         return depths[:, np.newaxis]
-    
+
     def _camera_to_world_coordiantes(self, points: np.ndarray) -> np.ndarray:
-        world_T_camera = np.array([
-            [0, 0, -1],
-            [-1, 0, 0],
-            [0, 1, 0],
-        ])
-        return (world_T_camera @ points.T).T
+        return (self.world_T_camera @ points.T).T
 
     def __getitem__(self, idx):
         rgb = self.data["rgb_video"][idx]
@@ -82,22 +82,26 @@ class KubricSequence():
 
         position = self.data["camera"]["positions"][idx]
         quaternion = self.data["camera"]["quaternions"][idx]
-        # target_points = self.data["target_points"][:, idx]
-        target_points_3d = self.data["target_points_3d"][:, idx]
-        target_points_3d = self._camera_to_world_coordiantes(target_points_3d)
+        blender_pose = SE3.from_rot_w_x_y_z_translation_x_y_z(
+            *quaternion, *position)
+        world_pose = blender_pose.compose(
+            SE3(np.linalg.inv(self.world_T_camera), np.zeros(3)))
+
         is_occluded = self.data["occluded"][:, idx]
 
-        pose = SE3.from_rot_w_x_y_z_translation_x_y_z(*quaternion, *position)
-        pointcloud = PointCloud.from_field_of_view_depth_image(
+        world_pointcloud = PointCloud.from_field_of_view_depth_image(
             depth[:, :, 0], self.intrinsics)
-        
-        particle_frame = ParticleFrame(target_points_3d, is_occluded,
+
+        blender_target_points_3d = self.data["target_points_3d"][:, idx]
+        world_target_points_3d = self._camera_to_world_coordiantes(
+            blender_target_points_3d)
+        particle_frame = ParticleFrame(world_target_points_3d, is_occluded,
                                        np.ones_like(is_occluded, dtype=bool))
         return {
-            "pose": pose,
-            "pointcloud": pointcloud,
+            "rgb": rgb,
+            "pose": world_pose,
+            "pointcloud": world_pointcloud,
             "particles": particle_frame,
-            "rgb": rgb
         }
 
 
