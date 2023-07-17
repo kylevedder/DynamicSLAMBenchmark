@@ -34,7 +34,7 @@ def add_geometry(geometry):
         vis.add_geometry(geometry)
 
 
-def draw_entry(entry):
+def draw_entry(color_scale : float, entry):
     pointcloud = entry["pointcloud"]
 
     pose = entry["pose"]
@@ -42,12 +42,14 @@ def draw_entry(entry):
 
     # Draw the pointcloud
     pc = projected_pointcloud.to_o3d()
-    pc = pc.paint_uniform_color([0, 1, 0])
+    pc = pc.paint_uniform_color([0, color_scale, 0])
     add_geometry(pc)
 
     particles = entry["particles"]
     projected_particles = particles.transform(pose)
-    add_geometry(projected_particles.to_o3d())
+    particles_o3d = projected_particles.to_o3d()
+    particles_o3d = [e.paint_uniform_color([color_scale, 0, 0]) for e in particles_o3d]
+    add_geometry(particles_o3d)
 
 
 # for idx in range(len(sequence)):
@@ -59,8 +61,8 @@ def draw_entry(entry):
 
 #     break
 
-for entry in sequence:
-    draw_entry(entry)
+for idx, entry in enumerate(sequence):
+    draw_entry(idx / len(sequence), entry)
 # draw_entry(sequence[10])
 
 vis.run()
