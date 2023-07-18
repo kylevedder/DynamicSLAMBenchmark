@@ -26,6 +26,11 @@ class SE3:
         self.transform_matrix[:3, 3] = self.translation
 
     @staticmethod
+    def identity() -> "SE3":
+        """Return the identity transformation."""
+        return SE3(rotation_matrix=np.eye(3), translation=np.zeros(3))
+
+    @staticmethod
     def from_rot_w_x_y_z_translation_x_y_z(rw, rx, ry, rz, tx, ty, tz) -> None:
         rotation_matrix = Quaternion(w=rw, x=rx, y=ry, z=rz).rotation_matrix
         translation = np.array([tx, ty, tz])

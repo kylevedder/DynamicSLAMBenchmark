@@ -34,35 +34,14 @@ def add_geometry(geometry):
         vis.add_geometry(geometry)
 
 
-def draw_entry(color_scale : float, entry):
-    pointcloud = entry["pointcloud"]
+raw_scene_sequence = sequence.to_raw_scene_sequence()
 
-    pose = entry["pose"]
-    projected_pointcloud = pointcloud.transform(pose)
+for timestep in raw_scene_sequence.get_percept_timesteps():
+    pointcloud_frame, rgb_frame = raw_scene_sequence.get_percepts(timestep)
+    global_pc = pointcloud_frame.pc.transform(pointcloud_frame.ego_to_global)
+    global_pc_o3d = global_pc.to_o3d()
+    global_pc_o3d = global_pc_o3d.paint_uniform_color([0, 1, 0])
+    add_geometry(global_pc_o3d)
 
-    # Draw the pointcloud
-    pc = projected_pointcloud.to_o3d()
-    pc = pc.paint_uniform_color([0, color_scale, 0])
-    add_geometry(pc)
-
-    particles = entry["particles"]
-    projected_particles = particles.transform(pose)
-    particles_o3d = projected_particles.to_o3d()
-    particles_o3d = [e.paint_uniform_color([color_scale, 0, 0]) for e in particles_o3d]
-    add_geometry(particles_o3d)
-
-
-# for idx in range(len(sequence)):
-#     entry = sequence[idx]
-
-#     # pc_o3d = pointcloud_via_o3d.to_o3d()
-#     # pc_o3d = pc_o3d.paint_uniform_color([0, 1, 0])
-#     # add_geometry(pc_o3d)
-
-#     break
-
-for idx, entry in enumerate(sequence):
-    draw_entry(idx / len(sequence), entry)
-# draw_entry(sequence[10])
 
 vis.run()

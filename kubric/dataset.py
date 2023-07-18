@@ -1,8 +1,9 @@
 from pathlib import Path
 import pickle
-from datastructures import SE3, PointCloud, ParticleFrame, CameraProjection, CameraModel, RGBImage
+from datastructures import SE3, PointCloud, ParticleFrame, CameraProjection, CameraModel, RGBImage, RawSceneSequence, PointCloudFrame, RGBFrame
 import numpy as np
 import scipy.interpolate as interpolate
+from typing import Dict
 
 
 class KubricSequence():
@@ -15,22 +16,17 @@ class KubricSequence():
             [0, 1, 0],
         ])
 
-    @property
-    def intrinsics(self):
+    def _get_camera_projection(self):
         focal_length = self.data["camera"]["focal_length"] * 2
         input_size_x = self.data["metadata"]["width"]
         input_size_y = self.data["metadata"]["height"]
         sensor_width = self.data["camera"]["sensor_width"]
 
-        f_x = focal_length / sensor_width * (input_size_x / 2)
-        f_y = f_x * input_size_x / input_size_y
-
-        return {
-            "fx": f_x,
-            "fy": f_y,
-            "cx": input_size_x / 2,
-            "cy": input_size_y / 2,
-        }
+        fx = focal_length / sensor_width * (input_size_x / 2)
+        fy = fx * input_size_x / input_size_y
+        cx = input_size_x / 2
+        cy = input_size_y / 2
+        return CameraProjection(fx, fy, cx, cy, CameraModel.FIELD_OF_VIEW)
 
     def __len__(self):
         # We only have N - 1 frames where the pose before and after is known, so we only have N - 1 samples.
@@ -101,23 +97,24 @@ class KubricSequence():
         return ParticleFrame(world_target_points_3d, is_occluded,
                              np.ones_like(is_occluded, dtype=bool))
 
-    def _get_camera_to_image(self, idx):
-        return CameraProjection(**self.intrinsics,
-                                camera_model=CameraModel.FIELD_OF_VIEW)
+    def to_raw_scene_sequence(self) -> RawSceneSequence:
+        pointcloud_lookup: Dict[int, PointCloudFrame] = {}
+        rgb_lookup: Dict[int, RGBFrame] = {}
 
-    def __getitem__(self, idx):
-        rgb_image = self._get_rgb(idx)
-        pose = self._get_pose(idx)
-        camera_projection = self._get_camera_to_image(idx)
-        particles = self._get_particle_frame(idx)
-        pointcloud = self._get_pointcloud(idx, camera_projection)
-        return {
-            "pose": pose,
-            "camera_projection": camera_projection,
-            "rgb": rgb_image,
-            "pointcloud": pointcloud,
-            "particles": particles,
-        }
+        start_pose = self._get_pose(0)
+        for idx in range(len(self)):
+
+            rgb_image = self._get_rgb(idx)
+            pose = self._get_pose(idx)
+            camera_projection = self._get_camera_projection()
+            pointcloud = self._get_pointcloud(idx, camera_projection)
+
+            pointcloud_lookup[idx] = PointCloudFrame(
+                pointcloud,
+                start_pose.inverse().compose(pose))
+            rgb_lookup[idx] = RGBFrame(rgb_image, SE3.identity(),
+                                       camera_projection)
+        return RawSceneSequence(pointcloud_lookup, rgb_lookup)
 
 
 class KubricSequenceLoader():
