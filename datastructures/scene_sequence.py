@@ -1,32 +1,76 @@
 import numpy as np
 from typing import Dict, List, Tuple, Any
 
+from numpy._typing import NDArray
+
 from .camera_projection import CameraProjection
 from .pointcloud import PointCloud
 from .rgb_image import RGBImage
 from .se3 import SE3
-from .particle_frame import ParticleFrame
+from .o3d_visualizer import O3DVisualizer
 
 from dataclasses import dataclass
+
+
+# Type alias for particle IDs
+class ParticleID(str):
+    pass
+
+
+# Type alias for timestamps
+class Timestamp(int):
+    pass
+
+
+# Type alias for world points
+WorldParticle = np.array
+
+
+@dataclass
+class EstimatedParticle():
+    point: WorldParticle
+    is_occluded: bool
+
+
+@dataclass
+class PoseInfo():
+    sensor_to_ego: SE3
+    ego_to_global: SE3
 
 
 @dataclass
 class PointCloudFrame():
     pc: PointCloud
-    ego_to_global: SE3
+    pose: PoseInfo
 
 
 @dataclass
 class RGBFrame():
     rgb: RGBImage
-    sensor_to_ego: SE3
+    pose: PoseInfo
     camera_projection: CameraProjection
 
 
 @dataclass
-class QueryPoint():
-    point: np.ndarray
-    timestamp: int
+class ParticleTrajectory():
+    id: ParticleID
+    trajectory: Dict[Timestamp, EstimatedParticle]
+
+    def __len__(self):
+        return len(self.trajectory)
+
+    def get_first_timestamp(self) -> Timestamp:
+        return min(self.trajectory.keys())
+
+    def __getitem__(self, timestamp: Timestamp) -> EstimatedParticle:
+        return self.trajectory[timestamp]
+
+
+def _particle_id_to_color(
+        particle_id: ParticleID) -> Tuple[float, float, float]:
+    hash_val = abs(hash(particle_id)) % (256**3)
+    return np.array([((hash_val >> 16) & 0xff) / 255,
+                     ((hash_val >> 8) & 0xff) / 255, (hash_val & 0xff) / 255])
 
 
 class RawSceneSequence():
@@ -35,58 +79,40 @@ class RawSceneSequence():
     describe the scene as it is observed by the sensors; it does not contain
     any other information such as point position descriptions.
 
-    These percepts are multi-modal, and may not be time sync'd. As an example,
-    in many AVs, the cameras run at 30 or 60 Hz while the lidar runs at 10 Hz.
-    Thus, each percept is recorded as a lookup table from timestamps to the
-    percept. We solve the time sync problem by pulling the most recent percept
-    from each modality when requesting all percepts for a given timestep.
-
     These percept modalities are:
         - RGB
         - PointClouds
 
-    Additionally, we store frame conversions for each percept. We assume the 
-    frame of the point cloud is the ego frame, and we store the following:
-        - PointCloud, Ego to Global
-        - RGB, Sensor to Ego
+    Additionally, we store frame conversions for each percept.
     """
 
-    def __init__(self, pointcloud_lookup: Dict[int, PointCloudFrame],
-                 rgb_image_lookup: Dict[int, RGBFrame]):
-        self.pc_map = pointcloud_lookup
-        self.pc_timestamp_array = np.array(sorted(pointcloud_lookup.keys()))
-        self.rgb_map = rgb_image_lookup
-        self.rgb_timestamp_array = np.array(sorted(rgb_image_lookup.keys()))
+    def __init__(self, percept_lookup: Dict[Timestamp, Tuple[PointCloudFrame,
+                                                             RGBFrame]]):
+        self.percept_lookup = percept_lookup
 
     def get_percept_timesteps(self) -> List[int]:
-        keys = set(self.pc_map.keys()).union(set(self.rgb_map.keys()))
-        return sorted(keys)
-
-    def _get_current_or_most_recent_timestamp(self, query_timestamp: int,
-                                              timestamp_array: np.ndarray,
-                                              lookup_map: Dict[int, Any]):
-        if query_timestamp > timestamp_array[-1]:
-            result_index = -1
-        else:
-            result_index = np.searchsorted(timestamp_array,
-                                           query_timestamp,
-                                           side='left')
-        result_timestamp = timestamp_array[result_index]
-        return lookup_map[result_timestamp]
+        return sorted(self.percept_lookup.keys())
 
     def __len__(self):
         return len(self.get_percept_timesteps())
 
-    def get_percepts(self, timestamp: int) -> Tuple[PointCloudFrame, RGBFrame]:
-        pc_frame: PointCloudFrame = self._get_current_or_most_recent_timestamp(
-            timestamp, self.pc_timestamp_array, self.pc_map)
-        rgb_frame: RGBFrame = self._get_current_or_most_recent_timestamp(
-            timestamp, self.rgb_timestamp_array, self.rgb_map)
-
+    def __getitem__(self, timestamp: int) -> Tuple[PointCloudFrame, RGBFrame]:
+        assert isinstance(
+            timestamp, int), f"timestamp must be an int, got {type(timestamp)}"
+        pc_frame, rgb_frame = self.percept_lookup[timestamp]
         return pc_frame, rgb_frame
 
+    def visualize(self, vis: O3DVisualizer) -> O3DVisualizer:
+        for timestamp in self.get_percept_timesteps():
+            pc_frame, rgb_frame = self[timestamp]
+            vis.add_pointcloud(
+                pc_frame.pc,
+                pc_frame.pose.sensor_to_ego @ pc_frame.pose.ego_to_global,
+                color=[0.5, 0.5, 0.5])
+        return vis
 
-class QuerySceneSequence(RawSceneSequence):
+
+class QuerySceneSequence:
     """
     This class describes a scene sequence with a query for motion descriptions.
 
@@ -95,21 +121,49 @@ class QuerySceneSequence(RawSceneSequence):
     implied to be linear between these points at the requested timestamps.
     """
 
-    def __init__(self, pointcloud_lookup: Dict[int, PointCloudFrame],
-                 rgb_image_lookup: Dict[int, RGBFrame],
-                 query_timestamps: List[int], query_points: List[QueryPoint]):
-        super().__init__(pointcloud_lookup, rgb_image_lookup)
+    def __init__(self, scene_sequence: RawSceneSequence,
+                 query_particles: Dict[ParticleID, Tuple[WorldParticle,
+                                                         Timestamp]],
+                 query_timestamps: List[Timestamp]):
+        assert isinstance(scene_sequence, RawSceneSequence), \
+            f"scene_sequence must be a RawSceneSequence, got {type(scene_sequence)}"
+        assert isinstance(query_particles, dict), \
+            f"query_particles must be a dict, got {type(query_particles)}"
+        assert isinstance(query_timestamps, list), \
+            f"query_timestamps must be a list, got {type(query_timestamps)}"
+
+        self.scene_sequence = scene_sequence
+
+        ###################################################
+        # Sanity checks to ensure that the query is valid #
+        ###################################################
+
+        # Check that the query timestamps all have corresponding percepts
+        assert len(
+            set(self.scene_sequence.get_percept_timesteps()).intersection(
+                set(query_timestamps))) == len(query_timestamps)
+
+        # Check that the query points all have corresponding timestamps
+        assert len(
+            set(self.scene_sequence.get_percept_timesteps()).intersection(
+                set([t for _, t in query_particles.values()]))) > 0
+
         self.query_timestamps = query_timestamps
-        self.query_points = query_points
+        self.query_particles = query_particles
 
     def __len__(self) -> int:
         return len(self.query_timestamps)
 
-    def get_timesteps(self) -> List[int]:
-        return self.query_timestamps
+    def visualize(self, vis: O3DVisualizer) -> O3DVisualizer:
+        # Visualize the query points
+        for particle_id, (position, timestamp) in self.query_particles.items():
+            vis.add_sphere(position,
+                           radius=0.05,
+                           color=_particle_id_to_color(particle_id))
+        return vis
 
 
-class ResultsSceneSequence(RawSceneSequence):
+class ResultsSceneSequence:
     """
     This class describes a scene sequence result.
 
@@ -117,8 +171,39 @@ class ResultsSceneSequence(RawSceneSequence):
     scene.
     """
 
-    def __init__(self, pointcloud_lookup: Dict[int, PointCloudFrame],
-                 rgb_image_lookup: Dict[int, RGBFrame],
-                 particle_frames: Dict[int, ParticleFrame]):
-        super().__init__(pointcloud_lookup, rgb_image_lookup)
-        self.particle_frames = particle_frames
+    def __init__(self, scene_sequence: RawSceneSequence,
+                 particle_trajectories: Dict[ParticleID, ParticleTrajectory]):
+        assert isinstance(scene_sequence, RawSceneSequence), \
+            f"scene_sequence must be a RawSceneSequence, got {type(scene_sequence)}"
+
+        assert isinstance(particle_trajectories, dict), \
+            f"particle_frames must be a dict, got {type(particle_trajectories)}"
+        self.scene_sequence = scene_sequence
+
+        ##############################################################
+        # Sanity checks to ensure that the particle frames are valid #
+        ##############################################################
+
+        # Check that the particle frames all have corresponding timestamps
+        for particle_trajectory in particle_trajectories.values():
+            assert len(
+                set(self.scene_sequence.get_percept_timesteps()).intersection(
+                    set(particle_trajectory.trajectory.keys()))) > 0
+
+        self.particle_trajectories = particle_trajectories
+
+    def __len__(self) -> int:
+        return len(self.particle_trajectories)
+
+    def visualize(self, vis: O3DVisualizer) -> O3DVisualizer:
+        # Visualize each trajectory in a separate color.
+        for particle_id, particle_trajectory in self.particle_trajectories.items(
+        ):
+
+            # Visualize the particle trajectory
+            vis.add_trajectory(
+                [p.point for p in particle_trajectory.trajectory.values()],
+                _particle_id_to_color(particle_id),
+                radius=0.02)
+
+        return vis

@@ -75,6 +75,9 @@ class SE3:
         )
         return chained_se3
 
+    def __matmul__(self, right_se3: "SE3") -> "SE3":
+        return self.compose(right_se3)
+
     def to_array(self) -> np.ndarray:
         """Return the SE3 transformation matrix as a numpy array."""
         return self.transform_matrix

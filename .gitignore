@@ -20,4 +20,4 @@ job_dir/
 cluster_tb_logs/
 *_tb_logs/
 **.zip
-kubric/preprocessing/generated_data/
+datasets/kubric/preprocessing/generated_data/
