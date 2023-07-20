@@ -1,5 +1,5 @@
 from pathlib import Path
-import loaders
+from .loaders import *
 import numpy as np
 
 from datastructures import SE3, PointCloud, CameraProjection, CameraModel
@@ -24,17 +24,17 @@ class FlyingThings3D:
             (self.root_dir / "optical_flow" / "forward").glob("*.pfm"))
 
         self.left_rgb_images = [
-            loaders.read(path) for path in left_rgb_image_paths
+            f3d_read(path) for path in left_rgb_image_paths
         ]
         self.disparity_images = [
-            loaders.read(path) for path in disparity_image_paths
+            f3d_read(path) for path in disparity_image_paths
         ]
         self.depth_images = [
             self._disparity_to_depth(disparity)
             for disparity in self.disparity_images
         ]
         self.disparity_change_images = [
-            loaders.read(path) for path in disparity_change_image_paths
+            f3d_read(path) for path in disparity_change_image_paths
         ]
         self.depth_change_images = [
             self._disparity_to_depth(disparity + disparity_change) -
@@ -43,7 +43,7 @@ class FlyingThings3D:
                 self.disparity_change_images, self.disparity_images)
         ]
         self.optical_flow_images = [
-            loaders.read(path)[:, :, :2] for path in optical_flow_image_paths
+            f3d_read(path)[:, :, :2] for path in optical_flow_image_paths
         ]
 
         assert len(self.left_rgb_images) == len(self.disparity_images), \
@@ -53,7 +53,7 @@ class FlyingThings3D:
         assert len(self.left_rgb_images) == len(self.optical_flow_images), \
             f"rgb_images and optical_flow_images have different lengths, {len(self.left_rgb_images)} != {len(self.optical_flow_images)}"
 
-        self.camera_data = loaders.load_camera_matrices(root_dir /
+        self.camera_data = f3d_load_camera_matrices(root_dir /
                                                         "camera_data.txt")
         self.blender_T_camera_left_lst = [
             data["left"] for data in self.camera_data

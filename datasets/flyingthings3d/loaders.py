@@ -9,7 +9,7 @@ import sys
 import imageio
 
 
-def read(file):
+def f3d_read(file):
     file = str(file)
     if file.endswith('.float3'): return readFloat(file)
     elif file.endswith('.flo'): return readFlow(file)
@@ -21,7 +21,7 @@ def read(file):
     else: raise Exception('don\'t know how to read %s' % file)
 
 
-def write(file, data):
+def f3d_write(file, data):
     file = str(file)
     if file.endswith('.float3'): return writeFloat(file, data)
     elif file.endswith('.flo'): return writeFlow(file, data)
@@ -33,7 +33,7 @@ def write(file, data):
     else: raise Exception('don\'t know how to write %s' % file)
 
 
-def load_camera_matrices(file):
+def f3d_load_camera_matrices(file):
     file = str(file)
     lines = open(file).readlines()
     lines = [line.strip() for line in lines]

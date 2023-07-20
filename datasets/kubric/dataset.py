@@ -68,15 +68,17 @@ class KubricSequence():
             self) -> Dict[ParticleID, ParticleTrajectory]:
         is_occluded_array = self.data["occluded"]
         blender_target_points_3d_array = self.data["target_points_3d"]
+        object_ids = self.data["target_object_ids"]
         assert len(is_occluded_array) == len(blender_target_points_3d_array), \
             f"Number of particles does not match! {len(is_occluded_array)} != {len(blender_target_points_3d_array)}"
 
         particle_trajectory_dict: Dict[ParticleID, ParticleTrajectory] = {}
 
-        for trajectory_idx, (is_occluded_lst,
-                             blender_target_points_3d) in enumerate(
+        for trajectory_idx, (is_occluded_lst, blender_target_points_3d,
+                             object_id) in enumerate(
                                  zip(is_occluded_array,
-                                     blender_target_points_3d_array)):
+                                     blender_target_points_3d_array,
+                                     object_ids)):
             assert len(is_occluded_lst) == len(blender_target_points_3d), \
                 f"Number of particles timesteps does not match! {len(is_occluded_lst)} != {len(blender_target_points_3d)}"
             camera_frame_points = self._blender_to_right_hand_coordinates(
@@ -89,14 +91,17 @@ class KubricSequence():
                                 target_point_camera_frame) in enumerate(
                                     zip(is_occluded_lst, camera_frame_points)):
                 camera_pose = self._get_pose(timestamp_idx)
-                target_point_global_frame = camera_pose.transform_points(target_point_camera_frame[np.newaxis, :])[0]
+                target_point_global_frame = camera_pose.transform_points(
+                    target_point_camera_frame[np.newaxis, :])[0]
 
                 trajectory[Timestamp(timestamp_idx)] = EstimatedParticle(
                     target_point_global_frame, is_occluded)
 
             # Add trajectory to list
             particle_trajectory_dict[particle_id] = ParticleTrajectory(
-                particle_id, trajectory)
+                particle_id,
+                trajectory,
+                cls=object_id if object_id != 0 else None)
 
         return particle_trajectory_dict
 

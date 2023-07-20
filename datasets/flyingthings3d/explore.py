@@ -59,15 +59,15 @@ disparity_change_image_paths = sorted(
 optical_flow_image_paths = sorted(
     (root_dir / "optical_flow" / "forward").glob("*.pfm"))
 
-rgb_images = [loaders.read(str(path)) for path in rgb_image_paths]
-disparity_images = [loaders.read(str(path)) for path in disparity_image_paths]
+rgb_images = [loaders.f3d_read(str(path)) for path in rgb_image_paths]
+disparity_images = [loaders.f3d_read(str(path)) for path in disparity_image_paths]
 disparity_change_images = [
-    loaders.read(str(path)) for path in disparity_change_image_paths
+    loaders.f3d_read(str(path)) for path in disparity_change_image_paths
 ]
 optical_flow_images = [
-    loaders.read(str(path))[:, :, :2] for path in optical_flow_image_paths
+    loaders.f3d_read(str(path))[:, :, :2] for path in optical_flow_image_paths
 ]
-camera_data = loaders.load_camera_matrices(root_dir / "camera_data.txt")
+camera_data = loaders.f3d_load_camera_matrices(root_dir / "camera_data.txt")
 camera_data_left = [data["left"] for data in camera_data]
 camera_data_right = [data["right"] for data in camera_data]
 intrinsics = get_intrinsics()

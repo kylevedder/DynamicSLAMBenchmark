@@ -36,7 +36,6 @@ def project_point(cam, point3d, num_frames):
     projected_local = tf.matmul(point4d, tf.transpose(homo_transform,
                                                       (0, 2, 1)))
     
-    tf.print("homo_intrinsics", homo_intrinsics)
     projected = tf.matmul(projected_local,
                           tf.transpose(homo_intrinsics, (0, 2, 1)))
     image_coords = projected / projected[:, :, 2:3]
@@ -95,16 +94,6 @@ def unproject(coord, cam, depth):
     )
     points_3d = camera_ball @ tf.transpose(cam['matrix_world'])
 
-    # tf.print("VVVVVVVVVVVVVVVVVVVVV\nshp\n", shp)
-    # tf.print("coord\n", coord)
-    # tf.print("projected_pt\n", projected_pt)
-    # tf.print("cam['intrinsics']\n", cam['intrinsics'])
-    # tf.print("tf.linalg.inv(tf.transpose(cam['intrinsics']))\n", tf.linalg.inv(tf.transpose(cam['intrinsics'])))
-    # tf.print("camera_plane\n", camera_plane)
-    # tf.print("camera_plane_denominator\n", camera_plane_denominator)
-    # tf.print("cam['matrix_world']\n", cam['matrix_world'])
-    # tf.print("camera_ball\n", camera_ball, "\n^^^^^^^^^^^^^^^^^^^^^^^")
-
     return points_3d[:, :3] / points_3d[:, 3:]
 
 
@@ -156,8 +145,6 @@ def reproject(coords, camera, camera_pos, num_frames, bbox=None):
 
     # Project each point back to the image using the camera.
     projections, points_3d = project_point(camera, world_coords, num_frames)
-
-    tf.print("reproject points_3d:", points_3d.shape, points_3d)
 
     return (
         tf.transpose(projections, (1, 0, 2)),
@@ -531,6 +518,7 @@ def track_points(
 
   """
     chosen_points = []
+    all_points_object_ids = []
     all_points_3d = []
     all_reproj = []
     all_occ = []
@@ -715,6 +703,8 @@ def track_points(
 
         all_points_3d.append(obj_points_3d)
         all_reproj.append(obj_reproj)
+        all_points_object_ids.append(tf.ones([tf.shape(obj_reproj)[0]],
+                                              dtype=tf.int32) * i)
         all_occ.append(obj_occ)
 
     # Points are currently in pixel coordinates of the original video.  We now
@@ -728,9 +718,8 @@ def track_points(
     wd = wd[tf.newaxis, tf.newaxis, :]
     coord_multiplier = [num_frames, input_size[0], input_size[1]]
 
-    tf.print("Before concat:", type(all_points_3d))
-    tf.print("all_points_3d shapes:", [e.shape for e in all_points_3d])
     all_points_3d = tf.concat(all_points_3d, axis=0)
+    all_points_object_ids = tf.concat(all_points_object_ids, axis=0)
 
     all_reproj = tf.concat(all_reproj, axis=0)
     # We need to extract x,y, but the format of the window is [t1,y1,x1,t2,y2,x2]
@@ -753,7 +742,7 @@ def track_points(
 
     return tf.cast(chosen_points,
                    tf.float32), tf.cast(all_points_3d, tf.float32), tf.cast(
-                       all_reproj, tf.float32), all_occ, depth_map
+                       all_reproj, tf.float32), all_points_object_ids, all_occ, depth_map
 
 
 def _get_distorted_bounding_box(
@@ -848,7 +837,7 @@ def add_tracks(data,
                                   dtype=tf.int32,
                                   shape=[4])
 
-    query_points, target_points_3d, target_points, occluded, depth_map = track_points(
+    query_points, target_points_3d, target_points, target_object_ids, occluded, depth_map = track_points(
         data['object_coordinates'], data['depth'],
         data['metadata']['depth_range'], data['segmentations'], data['normal'],
         data['instances']['bboxes_3d'], data['instances']['quaternions'],
@@ -888,6 +877,7 @@ def add_tracks(data,
         'query_points': query_points,
         'target_points': target_points,
         'target_points_3d': target_points_3d,
+        'target_object_ids': target_object_ids,
         'occluded': occluded,
         'depth_video': depth_map,
         'rgb_video': video / (255. / 2.) - 1.,
@@ -1031,7 +1021,7 @@ def plot_tracks(rgb, points, occluded, trackgroup=None):
     return np.stack(disp, axis=0)
 
 
-def save_sequence_as_pkl(save_dir: Path, idx: int, data):
+def save_sequence(save_dir: Path, idx: int, data):
     save_dir.mkdir(parents=True, exist_ok=True)
     save_file = save_dir / f'{idx:04d}.pkl'
     save_file.unlink(missing_ok=True)
@@ -1054,14 +1044,7 @@ def main(save_directory: Path = Path() / "generated_data"):
         create_point_tracking_dataset(shuffle_buffer_size=None,
                                       random_crop=False))
     for i, data in enumerate(ds):
-        save_sequence_as_pkl(save_directory, i, data)
-
-        # disp_depth = plot_tracks(data['depth_video'] * .5 + .5,
-        #                          data['target_points'], data['occluded'])
-        # media.write_video(f'{i}_depth.mp4', disp_depth, fps=10)
-
-        if i > 10:
-            break
+        save_sequence(save_directory, i, data)
 
 
 if __name__ == '__main__':

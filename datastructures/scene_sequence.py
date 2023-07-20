@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Union
 
 from numpy._typing import NDArray
 
@@ -14,6 +14,10 @@ from dataclasses import dataclass
 
 # Type alias for particle IDs
 class ParticleID(str):
+    pass
+
+
+class ParticleClassName(str):
     pass
 
 
@@ -55,6 +59,7 @@ class RGBFrame():
 class ParticleTrajectory():
     id: ParticleID
     trajectory: Dict[Timestamp, EstimatedParticle]
+    cls: Union[ParticleClassName, None] = None
 
     def __len__(self):
         return len(self.trajectory)
@@ -203,7 +208,8 @@ class ResultsSceneSequence:
             # Visualize the particle trajectory
             vis.add_trajectory(
                 [p.point for p in particle_trajectory.trajectory.values()],
-                _particle_id_to_color(particle_id),
+                _particle_id_to_color(particle_id)
+                if particle_trajectory.cls is not None else [0, 0, 0],
                 radius=0.02)
 
         return vis
