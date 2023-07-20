@@ -5,7 +5,7 @@ import open3d as o3d
 import numpy as np
 import copy
 
-from dataset import FlyingThings3D
+from dataset import FlyingThingsSequence
 
 root_dir = Path("/efs/flying_things_3d_sample/")
 

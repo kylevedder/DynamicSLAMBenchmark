@@ -159,9 +159,25 @@ class QuerySceneSequence:
     def __len__(self) -> int:
         return len(self.query_timestamps)
 
-    def visualize(self, vis: O3DVisualizer) -> O3DVisualizer:
-        # Visualize the query points
-        for particle_id, (position, timestamp) in self.query_particles.items():
+    def visualize(self,
+                  vis: O3DVisualizer,
+                  percent_subsample: Union[None, float] = None,
+                  verbose: bool = False) -> O3DVisualizer:
+        if percent_subsample is not None:
+            assert percent_subsample > 0 and percent_subsample <= 1, \
+                f"percent_subsample must be in (0, 1], got {percent_subsample}"
+            every_kth_particle = int(1 / percent_subsample)
+        else:
+            every_kth_particle = 1
+        # Visualize the query points ordered by particle ID
+        for particle_idx, (particle_id, (position, timestamp)) in enumerate(
+                sorted(self.query_particles.items(), key=lambda x: x[0])):
+            if particle_idx % every_kth_particle != 0:
+                continue
+            if verbose and (particle_idx // every_kth_particle) % 20 == 0:
+                print(
+                    f"Visualizing particle query {particle_idx // every_kth_particle} of {len(self.query_particles) // every_kth_particle}"
+                )
             vis.add_sphere(position,
                            radius=0.05,
                            color=_particle_id_to_color(particle_id))
@@ -200,10 +216,28 @@ class ResultsSceneSequence:
     def __len__(self) -> int:
         return len(self.particle_trajectories)
 
-    def visualize(self, vis: O3DVisualizer) -> O3DVisualizer:
+    def visualize(self,
+                  vis: O3DVisualizer,
+                  percent_subsample: Union[None, float] = None,
+                  verbose: bool = False) -> O3DVisualizer:
+        if percent_subsample is not None:
+            assert percent_subsample > 0 and percent_subsample <= 1, \
+                f"percent_subsample must be in (0, 1], got {percent_subsample}"
+            every_kth_particle = int(1 / percent_subsample)
+        else:
+            every_kth_particle = 1
+
         # Visualize each trajectory in a separate color.
-        for particle_id, particle_trajectory in self.particle_trajectories.items(
-        ):
+        for particle_idx, (particle_id, particle_trajectory) in enumerate(
+                sorted(self.particle_trajectories.items(),
+                       key=lambda x: x[0])):
+            if particle_idx % every_kth_particle != 0:
+                continue
+
+            if verbose and (particle_idx // every_kth_particle) % 20 == 0:
+                print(
+                    f"Visualizing particle trajectory {particle_idx // every_kth_particle} of {len(self.particle_trajectories) // every_kth_particle}"
+                )
 
             # Visualize the particle trajectory
             vis.add_trajectory(

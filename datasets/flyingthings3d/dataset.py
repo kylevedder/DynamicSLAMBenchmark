@@ -1,27 +1,86 @@
-from pathlib import Path
+from datastructures import *
 from .loaders import *
+from pathlib import Path
 import numpy as np
-
-from datastructures import SE3, PointCloud, CameraProjection, CameraModel
 import matplotlib.pyplot as plt
 import open3d as o3d
 from typing import Tuple, List, Dict, Any
 
 
-class FlyingThings3D:
+class FlyingThingsSequence:
+    """
+    Assumes the following example directory structure:
 
-    def __init__(self, root_dir: Path):
+    root_dir
+    ├── camera_data
+    │   └── TRAIN
+    │       └── A
+    │           └── 0001
+    │               └── camera_data.txt
+    ├── disparity
+    │   └── TRAIN
+    │       └── A
+    │           └── 0001
+    │               ├── 0006.pfm
+    │               ├── 0007.pfm
+    │               └── 0008.pfm
+    ├── disparity_change
+    │   └── TRAIN
+    │       └── A
+    │           └── 0001
+    │               ├── 0006.pfm
+    │               ├── 0007.pfm
+    │               └── 0008.pfm
+    ├── object_index
+    │   └── TRAIN
+    │       └── A
+    │           └── 0001
+    │               ├── 0006.pfm
+    │               ├── 0007.pfm
+    │               └── 0008.pfm
+    ├── optical_flow
+    │   └── TRAIN
+    │       └── A
+    │           └── 0001
+    │               ├── backward
+    │               │   ├── 0006.pfm
+    │               │   ├── 0007.pfm
+    │               │   └── 0008.pfm
+    │               └── forward
+    │                   ├── 0006.pfm
+    │                   ├── 0007.pfm
+    │                   └── 0008.pfm
+    └── RGB_cleanpass
+        └── TRAIN
+            └── A
+                └── 0001
+                    ├── left
+                    │   ├── 0006.png
+                    │   ├── 0007.png
+                    │   └── 0008.png
+                    └── right
+                        ├── 0006.png
+                        ├── 0007.png
+                        └── 0008.png
+    """
+
+    def __init__(self, root_dir: Path, split_subdir_names: str):
         root_dir = Path(root_dir)
         self.root_dir = root_dir
 
         left_rgb_image_paths = sorted(
-            (self.root_dir / "RGB_cleanpass" / "left").glob("*.png"))
+            (self.root_dir / "RGB_cleanpass" / split_subdir_names /
+             "left").glob("*.png"))
         disparity_image_paths = sorted(
-            (self.root_dir / "disparity").glob("*.pfm"))
+            (self.root_dir / "disparity" / split_subdir_names).glob("*.pfm"))
         disparity_change_image_paths = sorted(
-            (self.root_dir / "disparity_change").glob("*.pfm"))
+            (self.root_dir / "disparity_change" /
+             split_subdir_names).glob("*.pfm"))
         optical_flow_image_paths = sorted(
-            (self.root_dir / "optical_flow" / "forward").glob("*.pfm"))
+            (self.root_dir / "optical_flow" / split_subdir_names /
+             "forward").glob("*.pfm"))
+        object_index_image_paths = sorted((self.root_dir / "object_index" /
+                                           split_subdir_names).glob("*.pfm"))
 
         self.left_rgb_images = [
             f3d_read(path) for path in left_rgb_image_paths
@@ -45,6 +104,9 @@ class FlyingThings3D:
         self.optical_flow_images = [
             f3d_read(path)[:, :, :2] for path in optical_flow_image_paths
         ]
+        self.object_index_images = [
+            f3d_read(path) for path in object_index_image_paths
+        ]
 
         assert len(self.left_rgb_images) == len(self.disparity_images), \
             f"rgb_images and disparity_images have different lengths, {len(self.left_rgb_images)} != {len(self.disparity_images)}"
@@ -52,9 +114,11 @@ class FlyingThings3D:
             f"rgb_images and disparity_change_images have different lengths, {len(self.left_rgb_images)} != {len(self.disparity_change_images)}"
         assert len(self.left_rgb_images) == len(self.optical_flow_images), \
             f"rgb_images and optical_flow_images have different lengths, {len(self.left_rgb_images)} != {len(self.optical_flow_images)}"
+        assert len(self.left_rgb_images) == len(self.object_index_images), \
+            f"rgb_images and object_index_images have different lengths, {len(self.left_rgb_images)} != {len(self.object_index_images)}"
 
-        self.camera_data = f3d_load_camera_matrices(root_dir /
-                                                        "camera_data.txt")
+        self.camera_data = f3d_load_camera_matrices(
+            root_dir / "camera_data" / split_subdir_names / "camera_data.txt")
         self.blender_T_camera_left_lst = [
             data["left"] for data in self.camera_data
         ]
@@ -79,6 +143,22 @@ class FlyingThings3D:
         translation = world_T_standard[:3, 3]
         rotation = world_T_standard[:3, :3]
         return SE3(rotation_matrix=rotation, translation=translation)
+
+    def _get_raw_left_pose(self, idx):
+        return self._get_cam_pose(self.blender_T_camera_left_lst[idx])
+
+    def _get_left_pose(self, idx):
+        start_pose = self._get_raw_left_pose(0)
+        idx_pose = self._get_raw_left_pose(idx)
+        return start_pose.inverse().compose(idx_pose)
+
+    def _get_raw_right_pose(self, idx):
+        return self._get_cam_pose(self.blender_T_camera_right_lst[idx])
+
+    def _get_right_pose(self, idx):
+        start_pose = self._get_raw_right_pose(0)
+        idx_pose = self._get_raw_right_pose(idx)
+        return start_pose.inverse().compose(idx_pose)
 
     def _o3d_intrinsics(self):
         return o3d.camera.PinholeCameraIntrinsic(width=960,
@@ -129,8 +209,9 @@ class FlyingThings3D:
         # Stack the x and y positions into a 3D array of shape (H, W, 2)
         image_space_input_positions = np.stack([x_positions, y_positions],
                                                axis=2).astype(np.float32)
-        
-        camera_projection = CameraProjection(**self.intrinsics, camera_model=CameraModel.PINHOLE)
+
+        camera_projection = CameraProjection(**self.intrinsics,
+                                             camera_model=CameraModel.PINHOLE)
 
         input_pointcloud = PointCloud.from_points_and_depth(
             image_space_input_positions.reshape(-1, 2),
@@ -147,12 +228,12 @@ class FlyingThings3D:
     def __getitem__(self, idx):
         assert idx < len(self), f"idx out of bounds, {idx} >= {len(self)}"
 
-        left_cam_pose_t = self._get_cam_pose(
-            self.blender_T_camera_left_lst[idx])
-        right_cam_pose_t = self._get_cam_pose(
-            self.blender_T_camera_right_lst[idx])
-        left_cam_pose_tp1 = self._get_cam_pose(
-            self.blender_T_camera_left_lst[idx + 1])
+        left_cam_pose_t = self._get_left_pose(idx)
+        right_cam_pose_t = self._get_right_pose(idx)
+        left_cam_pose_tp1 = self._get_left_pose(idx + 1)
+
+        # object_index_image_t = self.object_index_images[idx]
+        # breakpoint()
 
         left_cam_rgb_t = self.left_rgb_images[idx]
         depth_image_t = self.depth_images[idx]
@@ -194,3 +275,119 @@ class FlyingThings3D:
     @property
     def _blender_T_standard(self):
         return np.linalg.inv(self._standard_T_blender)
+
+    def _particle_idx_to_particle_id(self, particle_idx: int) -> ParticleID:
+        return ParticleID(f"particle_{particle_idx:08d}")
+
+    def to_raw_scene_sequence(self) -> RawSceneSequence:
+
+        # Accumulate the data from each frame into percept_lookup.
+        percept_lookup: Dict[Timestamp, Tuple[PointCloudFrame, RGBFrame]] = {}
+        camera_projection = CameraProjection(**self.intrinsics,
+                                             camera_model=CameraModel.PINHOLE)
+
+        for entry_idx in range(len(self)):
+            entry_dict = self[entry_idx]
+            rgb = RGBImage(entry_dict["left_cam_rgb_t"].astype(np.float32) /
+                           255.0)
+            global_pose: SE3 = entry_dict["left_cam_pose_t"]
+            pointcloud: PointCloud = entry_dict["left_pointcloud_t"]
+
+            pose_info = PoseInfo(sensor_to_ego=SE3.identity(),
+                                 ego_to_global=global_pose)
+
+            pc_frame = PointCloudFrame(pointcloud, pose_info)
+            rgb_frame = RGBFrame(rgb, pose_info, camera_projection)
+
+            percept_lookup[entry_idx] = (pc_frame, rgb_frame)
+
+        return RawSceneSequence(percept_lookup)
+
+    def to_query_scene_sequence(self,
+                                timestamp: Timestamp) -> QuerySceneSequence:
+        assert timestamp < len(
+            self), f"idx out of bounds, {timestamp} >= {len(self)}"
+        raw_scene_sequence = self.to_raw_scene_sequence()
+        entry_dict = self[timestamp]
+        pointcloud_t: PointCloud = entry_dict["left_pointcloud_t"]
+
+        query_particles = {
+            self._particle_idx_to_particle_id(particle_idx):
+            (particle_position, timestamp)
+            for particle_idx, particle_position in enumerate(
+                pointcloud_t.points)
+        }
+        query_timestamps = [timestamp, timestamp + 1]
+        return QuerySceneSequence(raw_scene_sequence, query_particles,
+                                  query_timestamps)
+
+    def to_result_scene_sequence(self,
+                                 timestamp: Timestamp) -> ResultsSceneSequence:
+        assert timestamp < len(
+            self), f"idx out of bounds, {timestamp} >= {len(self)}"
+        raw_scene_sequence = self.to_raw_scene_sequence()
+        entry_dict = self[timestamp]
+        pointcloud_t: PointCloud = entry_dict["left_pointcloud_t"]
+        left_cam_pose_t: SE3 = entry_dict["left_cam_pose_t"]
+        pointcloud_t = pointcloud_t.transform(left_cam_pose_t)
+        pointcloud_tp1: PointCloud = entry_dict["left_pointcloud_flowed_tp1"]
+        left_cam_pose_tp1: SE3 = entry_dict["left_cam_pose_tp1"]
+        pointcloud_tp1 = pointcloud_tp1.transform(left_cam_pose_tp1)
+
+        particle_trajectories: Dict[ParticleID, ParticleTrajectory] = {}
+
+        for particle_idx, (point_t, point_tp1) in enumerate(
+                zip(pointcloud_t.points, pointcloud_tp1.points)):
+            particle_id = self._particle_idx_to_particle_id(particle_idx)
+            particle_lookup = {
+                timestamp: EstimatedParticle(point_t, False),
+                timestamp + 1: EstimatedParticle(point_tp1, False)
+            }
+            cls = None
+            particle_trajectories[particle_id] = ParticleTrajectory(
+                particle_id, particle_lookup, cls)
+
+        return ResultsSceneSequence(raw_scene_sequence, particle_trajectories)
+
+
+class FlyingThings3D():
+
+    def __init__(self, root_dir: Path, split: str = "TRAIN"):
+        root_dir = Path(root_dir)
+        self.root_dir = root_dir
+        self.split = split.upper()
+
+        # Use the camera_data folder as the source of truth for sequence names and lengths
+
+        camera_data_dir = self.root_dir / "camera_data" / self.split
+
+        sequence_dirs = sorted(camera_data_dir.glob("*/*"))
+        self.split_subdir_names = [
+            f"{e.parent.name}/{e.name}" for e in sequence_dirs
+        ]
+        self.subdir_lengths = [
+            len(f3d_load_camera_matrices(e / "camera_data.txt")) - 1
+            for e in sequence_dirs
+        ]
+
+        assert all([l > 0 for l in self.subdir_lengths]), \
+            f"all sequence lengths must be greater than 0, {self.subdir_lengths}"
+
+    def __len__(self) -> int:
+        return sum(self.subdir_lengths)
+
+    def __getitem__(self,
+                    idx) -> Tuple[QuerySceneSequence, ResultsSceneSequence]:
+        assert idx < len(self), f"idx out of bounds, {idx} >= {len(self)}"
+
+        # Find the sequence that contains the idx
+        sequence_idx = 0
+        while idx >= self.subdir_lengths[sequence_idx]:
+            idx -= self.subdir_lengths[sequence_idx]
+            sequence_idx += 1
+
+        sequence = FlyingThingsSequence(
+            self.root_dir,
+            self.split + "/" + self.split_subdir_names[sequence_idx])
+        return sequence.to_query_scene_sequence(
+            idx), sequence.to_result_scene_sequence(idx)

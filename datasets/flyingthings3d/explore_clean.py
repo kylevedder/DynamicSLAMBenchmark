@@ -5,11 +5,11 @@ import open3d as o3d
 import numpy as np
 from datastructures import SE3, PointCloud
 
-from dataset import FlyingThings3D
+from dataset import FlyingThingsSequence
 
 root_dir = Path("/efs/flying_things_3d_sample/")
 
-dataset = FlyingThings3D(root_dir)
+dataset = FlyingThingsSequence(root_dir)
 
 # Create o3d visualizer
 vis = o3d.visualization.Visualizer()
