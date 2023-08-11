@@ -13,6 +13,9 @@ args = parser.parse_args()
 # Construct the dataset
 dataset = construct_dataset(args.dataset, dict(root_dir=args.root_dir))
 
+print(f"Dataset {args.dataset} constructed successfully!")
+print(f"Number of scenes: {len(dataset)}")
+
 visualize_settings = dict()
 if args.dataset == "flyingthings3d":
     visualize_settings = dict(verbose=False, percent_subsample=0.001)
@@ -23,7 +26,7 @@ for idx, (query, result) in enumerate(dataset):
     print("Visualizing scene sequence...")
     vis = query.scene_sequence.visualize(vis)
     # vis = query.visualize(vis, **visualize_settings)
-    print("Visualizing result...")
-    vis = result.visualize(vis, **visualize_settings)
+    # print("Visualizing result...")
+    # vis = result.visualize(vis, **visualize_settings)
     print("Running visualizer...")
     vis.run()

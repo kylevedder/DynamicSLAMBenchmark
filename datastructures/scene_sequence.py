@@ -108,12 +108,13 @@ class RawSceneSequence():
         return pc_frame, rgb_frame
 
     def visualize(self, vis: O3DVisualizer) -> O3DVisualizer:
-        for timestamp in self.get_percept_timesteps():
+        timesteps = self.get_percept_timesteps()
+        grayscale_color = np.linspace(0, 1, len(timesteps) + 1)
+        for idx, timestamp in enumerate(timesteps):
             pc_frame, rgb_frame = self[timestamp]
-            vis.add_pointcloud(
-                pc_frame.pc,
-                pc_frame.pose.sensor_to_ego @ pc_frame.pose.ego_to_global,
-                color=[0.5, 0.5, 0.5])
+            pose = pc_frame.pose.ego_to_global @ pc_frame.pose.sensor_to_ego
+            vis.add_pointcloud(pc_frame.pc, pose, color=[grayscale_color[idx]] * 3)
+            vis.add_pose(pose)
         return vis
 
 

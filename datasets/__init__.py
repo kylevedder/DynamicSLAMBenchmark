@@ -1,8 +1,9 @@
 from typing import Dict
 from .kubric.dataset import Kubric
 from .flyingthings3d.dataset import FlyingThings3D
+from .pointodyssey.dataset import PointOdyssey
 
-__all__ = ["Kubric", "FlyingThings3D"]
+__all__ = ["Kubric", "FlyingThings3D", "PointOdyssey"]
 dataset_names = [cls.lower() for cls in __all__]
 
 

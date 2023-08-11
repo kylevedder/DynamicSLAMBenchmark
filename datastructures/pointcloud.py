@@ -89,14 +89,13 @@ class PointCloud():
     def from_depth_image(depth: np.ndarray,
                          camera_projection: CameraProjection) -> 'PointCloud':
         assert depth.ndim == 2, f'depth must be a 2D array, got {depth.ndim}'
-
         image_coordinates = make_image_pixel_coordinate_grid(depth.shape)
-
         image_coordinate_depths = depth.reshape(-1, 1)
 
-        return PointCloud(
-            camera_projection.to_camera(image_coordinates,
-                                    image_coordinate_depths))
+        points = camera_projection.to_camera(image_coordinates,
+                                             image_coordinate_depths)
+        finite_points = points[np.isfinite(points).all(axis=1)]
+        return PointCloud(finite_points)
 
     @staticmethod
     def from_points_and_depth(
@@ -104,7 +103,7 @@ class PointCloud():
             camera_projection: CameraProjection) -> 'PointCloud':
         return PointCloud(
             camera_projection.to_camera(image_coordinates,
-                                    image_coordinate_depths))
+                                        image_coordinate_depths))
 
     def transform(self, se3: SE3) -> 'PointCloud':
         assert isinstance(se3, SE3)

@@ -36,6 +36,15 @@ class SE3:
         translation = np.array([tx, ty, tz])
         return SE3(rotation_matrix, translation)
 
+    def translate(self, translation: np.ndarray) -> "SE3":
+        """Return a new SE3 instance with the given translation applied."""
+        if isinstance(translation, list):
+            translation = np.array(translation)
+        assert translation.shape == (
+            3, ), f"Translation must be a 3D vector, got {translation.shape}"
+        return SE3(rotation_matrix=self.rotation_matrix,
+                   translation=self.translation + translation)
+
     def transform_points(self, point_cloud: np.ndarray) -> np.ndarray:
         """Apply the SE(3) transformation to this point cloud.
         Args:

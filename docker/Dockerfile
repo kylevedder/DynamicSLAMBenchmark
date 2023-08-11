@@ -1,4 +1,4 @@
-FROM nvidia/cudagl:11.3.0-devel-ubuntu20.04
+FROM kylevedder/cudagl:11.7.1-devel-ubuntu20.04
 SHELL ["/bin/bash", "-c"]
 # Set the timezone info because otherwise tzinfo blocks install 
 # flow and ignores the non-interactive frontend command 🤬🤬🤬
@@ -20,15 +20,10 @@ RUN apt install -y apt-utils
 ENV TORCH_CUDA_ARCH_LIST="Ampere;Turing;Pascal"
 ENV FORCE_CUDA="1"
 RUN conda update -y conda
-RUN conda install numpy python=3.10 pytorch==1.12.1 torchvision torchaudio cudatoolkit=11.3 -c pytorch -y
-RUN conda install -c fvcore -c iopath -c conda-forge fvcore iopath -y
-RUN pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu113_pyt1121/download.html
-RUN pip install mmcv-full==1.7.1 -f https://download.openmmlab.com/mmcv/dist/cu113/torch1.12.0/index.html
-RUN pip install pyarrow pyquaternion open3d
-RUN pip install tensorboard
-RUN pip install pytorch-lightning==1.9.4
-RUN pip install nntime
-RUN pip install imageio
+RUN conda install numpy python pytorch==2 torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia -y
+RUN conda install fvcore iopath -c fvcore -c iopath -c conda-forge -y
+RUN pip install mmcv==2.0.1 -f https://download.openmmlab.com/mmcv/dist/cu117/torch2.0/index.html
+RUN pip install pytorch-lightning pyarrow pyquaternion open3d==0.16 tensorboard nntime imageio
 
 ENV PYTHONPATH=/project:${PYTHONPATH}
 COPY bashrc /root/.bashrc
