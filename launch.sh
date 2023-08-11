@@ -11,4 +11,4 @@ docker run --gpus=all --rm -it \
  -e DISPLAY=$DISPLAY \
  -h $HOSTNAME \
  --privileged \
- otto_von_benchmark
+ kylevedder/scene_trajectory_benchmark:latest
