@@ -121,8 +121,8 @@ class Argoverse2SceneFlow():
                 zip(source_pc, target_pc, pc_class_ids)):
             particle_trajectories[point_idx] = ParticleTrajectory(
                 point_idx, {
-                    subsequence_src_index: source_point,
-                    subsequence_tgt_index: target_point
+                    subsequence_src_index: EstimatedParticle(source_point, False),
+                    subsequence_tgt_index: EstimatedParticle(target_point, False)
                 },
                 ArgoverseSupervisedSceneFlowSequence.get_class_str(
                     pc_class_id))
@@ -140,7 +140,7 @@ class Argoverse2SceneFlow():
         sequence = self.sequence_loader[sequence_idx]
 
         subsequence_src_index = (self.subsequence_length - 1) // 2
-        subsequence_tgt_index = self.subsequence_length // 2
+        subsequence_tgt_index = subsequence_src_index + 1
         # Load subsequence
         subsequence_frames = [
             sequence.load(subsequence_idx + i,
