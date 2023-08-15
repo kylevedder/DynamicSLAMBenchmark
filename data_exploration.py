@@ -17,15 +17,15 @@ print(f"Dataset {args.dataset} constructed successfully!")
 print(f"Number of scenes: {len(dataset)}")
 
 visualize_settings = dict()
-if args.dataset == "flyingthings3d":
-    visualize_settings = dict(verbose=False, percent_subsample=0.001)
+if args.dataset in  {"flyingthings3d", "argoverse2sceneflow"}:
+    visualize_settings = dict(verbose=False, percent_subsample=0.01)
 
 for idx, (query, result) in enumerate(dataset):
     print("IDX:", idx)
     vis = O3DVisualizer()
     print("Visualizing scene sequence...")
     vis = query.scene_sequence.visualize(vis)
-    # vis = query.visualize(vis, **visualize_settings)
+    vis = query.visualize(vis, **visualize_settings)
     # print("Visualizing result...")
     # vis = result.visualize(vis, **visualize_settings)
     print("Running visualizer...")

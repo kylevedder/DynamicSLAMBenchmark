@@ -106,9 +106,12 @@ class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
             relative_pose_plus_one = start_pose.inverse().compose(
                 ix_plus_one_pose)
             ego_flowed_pc = ego_pc.flow(flow_0_1)
-            ego_flowed_pc_no_ground = ego_flowed_pc.mask_points(~is_ground_points)
-            relative_global_frame_flowed_pc = ego_flowed_pc_no_ground.transform(
-                relative_pose_plus_one)
+            ego_flowed_pc_no_ground = ego_flowed_pc.mask_points(
+                ~is_ground_points)
+            relative_global_frame_flowed_pc = ego_flowed_pc.transform_masked(
+                relative_pose_plus_one, ~is_ground_points)
+            relative_global_frame_flowed_pc_no_ground = relative_global_frame_flowed_pc.mask_points(
+                ~is_ground_points)
             classes_0 = classes_0[~is_ground_points]
             is_ground0 = is_ground0[~is_ground_points]
         else:
@@ -116,9 +119,9 @@ class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
 
         ego_pc_no_ground = ego_pc.mask_points(~is_ground_points)
         return {
-            "ego_pc" : ego_pc_no_ground,
+            "ego_pc": ego_pc_no_ground,
             "ego_pc_with_ground": ego_pc,
-            "ego_flowed_pc" : ego_flowed_pc_no_ground,
+            "ego_flowed_pc": ego_flowed_pc_no_ground,
             "ego_flowed_pc_with_ground": ego_flowed_pc,
             "relative_pc": relative_global_frame_pc,
             "relative_pc_with_ground": relative_global_frame_pc_with_ground,
@@ -127,7 +130,8 @@ class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
             "rgb_camera_projection": self.rgb_camera_projection,
             "rgb_camera_ego_pose": self.rgb_camera_ego_pose,
             "relative_pose": relative_pose,
-            "relative_flowed_pc": relative_global_frame_flowed_pc,
+            "relative_flowed_pc": relative_global_frame_flowed_pc_no_ground,
+            "relative_flowed_pc_with_ground": relative_global_frame_flowed_pc,
             "pc_classes": classes_0,
             "pc_is_ground": is_ground0,
             "log_id": self.log_id,

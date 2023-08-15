@@ -108,6 +108,14 @@ class PointCloud():
     def transform(self, se3: SE3) -> 'PointCloud':
         assert isinstance(se3, SE3)
         return PointCloud(se3.transform_points(self.points))
+    
+    def transform_masked(self, se3: SE3, mask: np.ndarray) -> 'PointCloud':
+        assert isinstance(se3, SE3)
+        assert mask.ndim == 1
+        assert mask.shape[0] == len(self)
+        updated_points = self.points.copy()
+        updated_points[mask] = se3.transform_points(self.points[mask])
+        return PointCloud(updated_points)
 
     def translate(self, translation: np.ndarray) -> 'PointCloud':
         assert translation.shape == (3, )

@@ -1,7 +1,9 @@
 from datastructures import *
 from pathlib import Path
+from .loader_utils import load_pickle, save_pickle
 
 from typing import Tuple, Dict, List
+import multiprocessing
 
 from .argoverse_supervised_scene_flow import ArgoverseSupervisedSceneFlowSequenceLoader, ArgoverseSupervisedSceneFlowSequence
 
@@ -13,33 +15,50 @@ class Argoverse2SceneFlow():
     It provides iterable access over all problems in the dataset.
     """
 
-    def __init__(self,
-                 root_dir: Path,
-                 subsequence_length: int = 8,
-                 with_ground: bool = True) -> None:
+    def __init__(
+        self,
+        root_dir: Path,
+        subsequence_length: int = 8,
+        with_ground: bool = True,
+        cache_path: Path = Path("/tmp/")) -> None:
         self.root_dir = root_dir
         self.sequence_loader = ArgoverseSupervisedSceneFlowSequenceLoader(
             root_dir)
         self.subsequence_length = subsequence_length
+        self.cache_path = cache_path
         if with_ground:
             self.ego_pc_key = "ego_pc_with_ground"
             self.ego_pc_flowed_key = "ego_flowed_pc_with_ground"
+            self.relative_pc_key = "relative_pc_with_ground"
+            self.relative_pc_flowed_key = "relative_flowed_pc_with_ground"
         else:
             self.ego_pc_key = "ego_pc"
             self.ego_pc_flowed_key = "ego_flowed_pc"
+            self.relative_pc_key = "relative_pc"
+            self.relative_pc_flowed_key = "relative_flowed_pc"
+
+        self.dataset_to_sequence_subsequence_idx = self._load_dataset_to_sequence_subsequence_idx(
+        )
+
+    def _load_dataset_to_sequence_subsequence_idx(self):
+        cache_file = self.cache_path / f"dataset_to_sequence_subsequence_idx_cache_len_{self.subsequence_length}.pkl"
+        if cache_file.exists():
+            return load_pickle(cache_file)
 
         print("Building dataset index...")
         # Build map from dataset index to sequence and subsequence index.
-        self.dataset_to_sequence_subsequence_idx = []
+        dataset_to_sequence_subsequence_idx = []
         for sequence_idx, sequence in enumerate(self.sequence_loader):
             for subsequence_start_idx in range(
                     len(sequence) - self.subsequence_length + 1):
-                self.dataset_to_sequence_subsequence_idx.append(
+                dataset_to_sequence_subsequence_idx.append(
                     (sequence_idx, subsequence_start_idx))
 
         print(
-            f"Loaded {len(self.dataset_to_sequence_subsequence_idx)} subsequence pairs."
+            f"Loaded {len(dataset_to_sequence_subsequence_idx)} subsequence pairs. Saving it to {cache_file}"
         )
+        save_pickle(cache_file, dataset_to_sequence_subsequence_idx)
+        return dataset_to_sequence_subsequence_idx
 
     def __len__(self):
         return len(self.dataset_to_sequence_subsequence_idx)
@@ -78,7 +97,7 @@ class Argoverse2SceneFlow():
         query_particles: Dict[ParticleID, Tuple[WorldParticle, Timestamp]] = {
             point_idx: (point, subsequence_src_index)
             for point_idx, point in enumerate(source_entry[
-                self.ego_pc_key].points)
+                self.relative_pc_key].points)
         }
 
         return QuerySceneSequence(scene_sequence, query_particles,
@@ -92,8 +111,8 @@ class Argoverse2SceneFlow():
         # the source frame and the associated flowed points.
 
         source_entry = subsequence_frames[subsequence_src_index]
-        source_pc = source_entry[self.ego_pc_key].points
-        target_pc = source_entry[self.ego_pc_flowed_key].points
+        source_pc = source_entry[self.relative_pc_key].points
+        target_pc = source_entry[self.relative_pc_flowed_key].points
         pc_class_ids = source_entry["pc_classes"]
         assert len(source_pc) == len(
             target_pc), "Source and target point clouds must be the same size."
