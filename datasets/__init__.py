@@ -2,8 +2,9 @@ from typing import Dict
 from .kubric.dataset import Kubric
 from .flyingthings3d.dataset import FlyingThings3D
 from .pointodyssey.dataset import PointOdyssey
+from .argoverse2 import Argoverse2SceneFlow
 
-__all__ = ["Kubric", "FlyingThings3D", "PointOdyssey"]
+__all__ = ["Kubric", "FlyingThings3D", "PointOdyssey", "Argoverse2SceneFlow"]
 dataset_names = [cls.lower() for cls in __all__]
 
 

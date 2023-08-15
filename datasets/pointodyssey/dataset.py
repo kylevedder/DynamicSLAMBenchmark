@@ -128,7 +128,7 @@ class PointOdysseySequence():
         print(f"min_depth_image_val: {min_depth_image_val}")
         print(f"max_depth_image_val: {max_depth_image_val}")
         pointclouds = [
-            PointCloud.from_depth_image(depth_image / 100,
+            PointCloud.from_depth_image(depth_image / 16,
                                         camera_projection)
             for depth_image in depth_images
         ]
