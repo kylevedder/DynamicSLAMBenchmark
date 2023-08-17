@@ -112,7 +112,7 @@ class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
                 relative_pose_plus_one, ~is_ground_points)
             relative_global_frame_flowed_pc_no_ground = relative_global_frame_flowed_pc.mask_points(
                 ~is_ground_points)
-            classes_0 = classes_0[~is_ground_points]
+            classes_0_no_ground = classes_0[~is_ground_points]
             is_ground0 = is_ground0[~is_ground_points]
         else:
             ego_flowed_pc = None
@@ -120,6 +120,7 @@ class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
             relative_global_frame_flowed_pc_no_ground = None
             relative_global_frame_flowed_pc = None
             classes_0 = None
+            classes_0_no_ground = None
             is_ground0 = None
 
         ego_pc_no_ground = ego_pc.mask_points(~is_ground_points)
@@ -137,7 +138,8 @@ class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
             "relative_pose": relative_pose,
             "relative_flowed_pc": relative_global_frame_flowed_pc_no_ground,
             "relative_flowed_pc_with_ground": relative_global_frame_flowed_pc,
-            "pc_classes": classes_0,
+            "pc_classes": classes_0_no_ground,
+            "pc_classes_with_ground": classes_0,
             "pc_is_ground": is_ground0,
             "log_id": self.log_id,
             "log_idx": idx,

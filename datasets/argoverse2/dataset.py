@@ -4,8 +4,22 @@ from .loader_utils import load_pickle, save_pickle
 
 from typing import Tuple, Dict, List
 import multiprocessing
+import time
+import numpy as np
 
 from .argoverse_supervised_scene_flow import ArgoverseSupervisedSceneFlowSequenceLoader, ArgoverseSupervisedSceneFlowSequence
+
+
+def _build_result_entry(
+        point_idx: int, source_point: np.ndarray, target_point: np.ndarray,
+        pc_class_id: int, subsequence_src_index: int,
+        subsequence_tgt_index: int) -> Tuple[int, ParticleTrajectory]:
+    particle_trajectory = ParticleTrajectory(
+        point_idx, {
+            subsequence_src_index: EstimatedParticle(source_point, False),
+            subsequence_tgt_index: EstimatedParticle(target_point, False)
+        }, ArgoverseSupervisedSceneFlowSequence.get_class_str(pc_class_id))
+    return point_idx, particle_trajectory
 
 
 class Argoverse2SceneFlow():
@@ -18,7 +32,7 @@ class Argoverse2SceneFlow():
     def __init__(
         self,
         root_dir: Path,
-        subsequence_length: int = 8,
+        subsequence_length: int = 2,
         with_ground: bool = True,
         cache_path: Path = Path("/tmp/")) -> None:
         self.root_dir = root_dir
@@ -31,11 +45,13 @@ class Argoverse2SceneFlow():
             self.ego_pc_flowed_key = "ego_flowed_pc_with_ground"
             self.relative_pc_key = "relative_pc_with_ground"
             self.relative_pc_flowed_key = "relative_flowed_pc_with_ground"
+            self.pc_classes_key = "pc_classes_with_ground"
         else:
             self.ego_pc_key = "ego_pc"
             self.ego_pc_flowed_key = "ego_flowed_pc"
             self.relative_pc_key = "relative_pc"
             self.relative_pc_flowed_key = "relative_flowed_pc"
+            self.pc_classes_key = "pc_classes"
 
         self.dataset_to_sequence_subsequence_idx = self._load_dataset_to_sequence_subsequence_idx(
         )
@@ -94,11 +110,15 @@ class Argoverse2SceneFlow():
             subsequence_src_index, subsequence_tgt_index
         ]
         source_entry = subsequence_frames[subsequence_src_index]
-        query_particles: Dict[ParticleID, Tuple[WorldParticle, Timestamp]] = {
-            point_idx: (point, subsequence_src_index)
-            for point_idx, point in enumerate(source_entry[
-                self.relative_pc_key].points)
-        }
+
+        pc_points_array = source_entry[self.relative_pc_key].points
+        timestamp_array = np.array([subsequence_src_index] *
+                                   len(pc_points_array))
+
+        query_particles = EfficientQueryParticleLookup(len(pc_points_array))
+
+        query_particles[np.arange(len(pc_points_array))] = (pc_points_array,
+                                                            timestamp_array)
 
         return QuerySceneSequence(scene_sequence, query_particles,
                                   query_timestamps)
@@ -110,30 +130,56 @@ class Argoverse2SceneFlow():
         # Build query scene sequence. This requires enumerating all points in
         # the source frame and the associated flowed points.
 
+        metadata_setup_start = time.time()
+
         source_entry = subsequence_frames[subsequence_src_index]
         source_pc = source_entry[self.relative_pc_key].points
         target_pc = source_entry[self.relative_pc_flowed_key].points
-        pc_class_ids = source_entry["pc_classes"]
+        pc_class_ids = source_entry[self.pc_classes_key]
         assert len(source_pc) == len(
             target_pc), "Source and target point clouds must be the same size."
-        particle_trajectories: Dict[ParticleID, ParticleTrajectory] = {}
-        for point_idx, (source_point, target_point, pc_class_id) in enumerate(
-                zip(source_pc, target_pc, pc_class_ids)):
-            particle_trajectories[point_idx] = ParticleTrajectory(
-                point_idx, {
-                    subsequence_src_index: EstimatedParticle(
-                        source_point, False),
-                    subsequence_tgt_index: EstimatedParticle(
-                        target_point, False)
-                },
-                ArgoverseSupervisedSceneFlowSequence.get_class_str(
-                    pc_class_id))
+        assert len(source_pc) == len(
+            pc_class_ids
+        ), f"Source point cloud and class ids must be the same size. Instead got {len(source_pc)} and {len(pc_class_ids)}."
 
-        return ResultsSceneSequence(scene_sequence, particle_trajectories)
+        metadata_setup_end = time.time()
+
+        particle_trajectories: Dict[ParticleID, ParticleTrajectory] = {}
+        particle_trajectories = EfficientParticleTrajectoriesLookup(
+            len(source_pc), 2)
+
+        points = np.stack([source_pc, target_pc], axis=1)
+        timestamps = np.array([subsequence_src_index, subsequence_tgt_index])
+        # Stack the false false array len(source_pc) times.
+        is_occluded = np.tile([False, False], (len(source_pc), 1))
+
+        particle_trajectories[np.arange(len(source_pc))] = (points, timestamps,
+                                                            is_occluded,
+                                                            pc_class_ids)
+        # for point_idx, (source_point, target_point, pc_class_id) in enumerate(
+        #         zip(source_pc, target_pc, pc_class_ids)):
+        #     key, value = _build_result_entry(
+        #         point_idx, source_point, target_point, pc_class_id,
+        #         subsequence_src_index, subsequence_tgt_index)
+        #     particle_trajectories[key] = value
+
+        dict_build_end = time.time()
+
+        result = ResultsSceneSequence(scene_sequence, particle_trajectories)
+
+        result_build_end = time.time()
+
+        print("\tMetadata setup: ", metadata_setup_end - metadata_setup_start)
+        print("\tDict build: ", dict_build_end - metadata_setup_end)
+        print("\tResult build: ", result_build_end - dict_build_end)
+
+        return result
 
     def __getitem__(
             self,
             dataset_idx) -> Tuple[QuerySceneSequence, ResultsSceneSequence]:
+        print(
+            f"Argoverse2 Scene Flow dataset __getitem__({dataset_idx}) start")
 
         sequence_idx, subsequence_start_idx = self.dataset_to_sequence_subsequence_idx[
             dataset_idx]
@@ -144,18 +190,36 @@ class Argoverse2SceneFlow():
         in_subsequence_src_index = (self.subsequence_length - 1) // 2
         in_subsequence_tgt_index = in_subsequence_src_index + 1
         # Load subsequence
+
+        load_frames_start = time.time()
         subsequence_frames = [
             sequence.load(subsequence_start_idx + i,
                           subsequence_start_idx + in_subsequence_tgt_index)
             for i in range(self.subsequence_length)
         ]
+        load_frames_end = time.time()
 
         scene_sequence = self._make_scene_sequence(subsequence_frames)
+        make_scene_sequence_end = time.time()
+
         query_scene_sequence = self._make_query_scene_sequence(
             scene_sequence, subsequence_frames, in_subsequence_src_index,
             in_subsequence_tgt_index)
+        make_query_scene_sequence_end = time.time()
+
         results_scene_sequence = self._make_results_scene_sequence(
             scene_sequence, subsequence_frames, in_subsequence_src_index,
             in_subsequence_tgt_index)
+        make_results_scene_sequence_end = time.time()
+
+        print("Load frames: ", load_frames_end - load_frames_start)
+        print("Make scene sequence: ",
+              make_scene_sequence_end - load_frames_end)
+        print("Make query scene sequence: ",
+              make_query_scene_sequence_end - make_scene_sequence_end)
+        print("Make results scene sequence: ",
+              make_results_scene_sequence_end - make_query_scene_sequence_end)
+
+        print(f"Argoverse2 Scene Flow dataset __getitem__({dataset_idx}) end")
 
         return query_scene_sequence, results_scene_sequence

@@ -3,7 +3,7 @@ from .se3 import SE3
 from .se2 import SE2
 from .rgb_image import RGBImage
 from .camera_projection import CameraProjection, CameraModel
-from .scene_sequence import RawSceneSequence, PointCloudFrame, RGBFrame, PoseInfo, QuerySceneSequence, ResultsSceneSequence, ParticleTrajectory, ParticleID, Timestamp, WorldParticle, EstimatedParticle
+from .scene_sequence import RawSceneSequence, PointCloudFrame, RGBFrame, PoseInfo, QuerySceneSequence, ResultsSceneSequence, ParticleTrajectory, ParticleID, Timestamp, WorldParticle, EstimatedParticle, EfficientQueryParticleLookup, QueryParticleLookup, EfficientParticleTrajectoriesLookup, ParticleTrajectoriesLookup
 from .o3d_visualizer import O3DVisualizer
 
 __all__ = [
@@ -11,5 +11,7 @@ __all__ = [
     'RGBImage', 'CameraProjection', 'CameraModel', 'RawSceneSequence',
     'PointCloudFrame', 'RGBFrame', 'PoseInfo', 'QuerySceneSequence',
     'ResultsSceneSequence', 'O3DVisualizer', 'ParticleTrajectory',
-    'ParticleID', 'Timestamp', 'WorldParticle', 'EstimatedParticle'
+    'ParticleID', 'Timestamp', 'WorldParticle', 'EstimatedParticle',
+    'EfficientQueryParticleLookup', 'QueryParticleLookup',
+    'EfficientParticleTrajectoriesLookup', 'ParticleTrajectoriesLookup'
 ]
