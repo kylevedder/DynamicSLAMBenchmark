@@ -3,12 +3,13 @@ touch docker_history.txt
 xhost +
 docker run --gpus=all --rm -it \
  --shm-size=16gb \
- -v `pwd`:/project \
+ -v `pwd`:/scene_trajectory_benchmark \
  -v /efs:/efs \
  -v /bigdata:/bigdata \
+ -v /tmp:/tmp \
  -v /tmp/.X11-unix:/tmp/.X11-unix \
  -v `pwd`/docker_history.txt:/root/.bash_history \
  -e DISPLAY=$DISPLAY \
  -h $HOSTNAME \
  --privileged \
- kylevedder/scene_trajectory_benchmark:latest
+ scene_trajectory_benchmark:latest

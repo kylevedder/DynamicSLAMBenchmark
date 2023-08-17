@@ -30,6 +30,11 @@ class O3DVisualizer:
         else:
             self.vis.add_geometry(geometry)
 
+    def add_pc_frame(self,
+                     pc_frame: 'PointCloudFrame',
+                     color: Union[Tuple[float, float, float], None] = None):
+        self.add_pointcloud(pc_frame.global_pc, color=color)
+
     def add_pointcloud(self,
                        pc: PointCloud,
                        pose: SE3 = SE3.identity(),

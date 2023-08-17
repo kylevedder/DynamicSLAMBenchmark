@@ -2,7 +2,7 @@ from pathlib import Path
 from collections import defaultdict
 from typing import List, Tuple, Dict, Optional, Any
 import pandas as pd
-from datastructures import PointCloud, SE3, SE2
+from scene_trajectory_benchmark.datastructures import PointCloud, SE3, SE2
 import numpy as np
 
 from . import ArgoverseRawSequence
@@ -59,9 +59,9 @@ class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
             )), f'Flow data missing for some timestamps in {self.dataset_dir}'
 
     @staticmethod
-    def get_class_str(class_id: int) -> str:
+    def get_class_str(class_id: int) -> Optional[str]:
         if class_id not in CATEGORY_MAP:
-            return 'UNKNOWN'
+            return None
         return CATEGORY_MAP[class_id]
 
     def _load_flow(self, idx):
@@ -115,7 +115,12 @@ class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
             classes_0 = classes_0[~is_ground_points]
             is_ground0 = is_ground0[~is_ground_points]
         else:
+            ego_flowed_pc = None
+            ego_flowed_pc_no_ground = None
+            relative_global_frame_flowed_pc_no_ground = None
             relative_global_frame_flowed_pc = None
+            classes_0 = None
+            is_ground0 = None
 
         ego_pc_no_ground = ego_pc.mask_points(~is_ground_points)
         return {

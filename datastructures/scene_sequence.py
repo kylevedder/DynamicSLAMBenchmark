@@ -47,6 +47,15 @@ class PointCloudFrame():
     pc: PointCloud
     pose: PoseInfo
 
+    @property
+    def global_pc(self) -> PointCloud:
+        pose = self.global_pose
+        return self.pc.transform(pose)
+
+    @property
+    def global_pose(self) -> SE3:
+        return self.pose.ego_to_global @ self.pose.sensor_to_ego
+
 
 @dataclass
 class RGBFrame():
@@ -112,9 +121,8 @@ class RawSceneSequence():
         grayscale_color = np.linspace(0, 1, len(timesteps) + 1)
         for idx, timestamp in enumerate(timesteps):
             pc_frame, rgb_frame = self[timestamp]
-            pose = pc_frame.pose.ego_to_global @ pc_frame.pose.sensor_to_ego
-            vis.add_pointcloud(pc_frame.pc, pose, color=[grayscale_color[idx]] * 3)
-            vis.add_pose(pose)
+            vis.add_pc_frame(pc_frame, color=[grayscale_color[idx]] * 3)
+            vis.add_pose(pc_frame.global_pose())
         return vis
 
 
@@ -145,9 +153,8 @@ class QuerySceneSequence:
         ###################################################
 
         # Check that the query timestamps all have corresponding percepts
-        assert len(
-            set(self.scene_sequence.get_percept_timesteps()).intersection(
-                set(query_timestamps))) == len(query_timestamps)
+        assert set(query_timestamps).issubset(set(self.scene_sequence.get_percept_timesteps())), \
+            f"Query timestamps {query_timestamps} must be a subset of the scene sequence percepts {self.scene_sequence.get_percept_timesteps()}"
 
         # Check that the query points all have corresponding timestamps
         assert len(

@@ -1,4 +1,4 @@
-from datastructures import *
+from scene_trajectory_benchmark.datastructures import *
 from pathlib import Path
 from .loader_utils import load_pickle, save_pickle
 
@@ -81,7 +81,7 @@ class Argoverse2SceneFlow():
             rgb_frame = RGBFrame(entry["rgb"],
                                  PoseInfo(rgb_to_ego, ego_to_world),
                                  rgb_camera_projection)
-            percept_lookup[entry["log_idx"]] = (point_cloud_frame, rgb_frame)
+            percept_lookup[dataset_idx] = (point_cloud_frame, rgb_frame)
 
         return RawSceneSequence(percept_lookup)
 
@@ -121,8 +121,10 @@ class Argoverse2SceneFlow():
                 zip(source_pc, target_pc, pc_class_ids)):
             particle_trajectories[point_idx] = ParticleTrajectory(
                 point_idx, {
-                    subsequence_src_index: EstimatedParticle(source_point, False),
-                    subsequence_tgt_index: EstimatedParticle(target_point, False)
+                    subsequence_src_index: EstimatedParticle(
+                        source_point, False),
+                    subsequence_tgt_index: EstimatedParticle(
+                        target_point, False)
                 },
                 ArgoverseSupervisedSceneFlowSequence.get_class_str(
                     pc_class_id))
@@ -133,27 +135,27 @@ class Argoverse2SceneFlow():
             self,
             dataset_idx) -> Tuple[QuerySceneSequence, ResultsSceneSequence]:
 
-        sequence_idx, subsequence_idx = self.dataset_to_sequence_subsequence_idx[
+        sequence_idx, subsequence_start_idx = self.dataset_to_sequence_subsequence_idx[
             dataset_idx]
 
         # Load sequence
         sequence = self.sequence_loader[sequence_idx]
 
-        subsequence_src_index = (self.subsequence_length - 1) // 2
-        subsequence_tgt_index = subsequence_src_index + 1
+        in_subsequence_src_index = (self.subsequence_length - 1) // 2
+        in_subsequence_tgt_index = in_subsequence_src_index + 1
         # Load subsequence
         subsequence_frames = [
-            sequence.load(subsequence_idx + i,
-                          subsequence_idx + subsequence_tgt_index)
+            sequence.load(subsequence_start_idx + i,
+                          subsequence_start_idx + in_subsequence_tgt_index)
             for i in range(self.subsequence_length)
         ]
 
         scene_sequence = self._make_scene_sequence(subsequence_frames)
         query_scene_sequence = self._make_query_scene_sequence(
-            scene_sequence, subsequence_frames, subsequence_src_index,
-            subsequence_tgt_index)
+            scene_sequence, subsequence_frames, in_subsequence_src_index,
+            in_subsequence_tgt_index)
         results_scene_sequence = self._make_results_scene_sequence(
-            scene_sequence, subsequence_frames, subsequence_src_index,
-            subsequence_tgt_index)
+            scene_sequence, subsequence_frames, in_subsequence_src_index,
+            in_subsequence_tgt_index)
 
         return query_scene_sequence, results_scene_sequence

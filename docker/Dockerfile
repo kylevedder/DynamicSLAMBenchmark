@@ -25,6 +25,6 @@ RUN conda install fvcore iopath -c fvcore -c iopath -c conda-forge -y
 RUN pip install mmcv==2.0.1 -f https://download.openmmlab.com/mmcv/dist/cu117/torch2.0/index.html
 RUN pip install pytorch-lightning pyarrow pyquaternion open3d==0.16 tensorboard nntime imageio
 
-ENV PYTHONPATH=/project:${PYTHONPATH}
+ENV PYTHONPATH=/:${PYTHONPATH}
 COPY bashrc /root/.bashrc
-WORKDIR /project
+WORKDIR /scene_trajectory_benchmark

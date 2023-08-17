@@ -1,4 +1,4 @@
-from datastructures import *
+from scene_trajectory_benchmark.datastructures import *
 from .loaders import *
 from pathlib import Path
 import numpy as np
