@@ -133,8 +133,7 @@ class Argoverse2SceneFlow():
         metadata_setup_end = time.time()
 
         particle_trajectories: Dict[ParticleID, ParticleTrajectory] = {}
-        particle_trajectories = ParticleTrajectoriesLookup(
-            len(source_pc), 2)
+        particle_trajectories = ParticleTrajectoriesLookup(len(source_pc), 2)
 
         points = np.stack([source_pc, target_pc], axis=1)
         timestamps = np.array([subsequence_src_index, subsequence_tgt_index])
@@ -164,10 +163,15 @@ class Argoverse2SceneFlow():
         return result
 
     def __getitem__(
-            self,
-            dataset_idx) -> Tuple[QuerySceneSequence, ResultsSceneSequence]:
-        print(
-            f"Argoverse2 Scene Flow dataset __getitem__({dataset_idx}) start")
+        self,
+        dataset_idx,
+        verbose: bool = False
+    ) -> Tuple[QuerySceneSequence, ResultsSceneSequence]:
+
+        if verbose:
+            print(
+                f"Argoverse2 Scene Flow dataset __getitem__({dataset_idx}) start"
+            )
 
         sequence_idx, subsequence_start_idx = self.dataset_to_sequence_subsequence_idx[
             dataset_idx]
@@ -207,7 +211,7 @@ class Argoverse2SceneFlow():
         #       make_query_scene_sequence_end - make_scene_sequence_end)
         # print("Make results scene sequence: ",
         #       make_results_scene_sequence_end - make_query_scene_sequence_end)
-
-        print(f"Argoverse2 Scene Flow dataset __getitem__({dataset_idx}) end")
+        if verbose:
+            print(f"Argoverse2 Scene Flow dataset __getitem__({dataset_idx}) end")
 
         return query_scene_sequence, results_scene_sequence

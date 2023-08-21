@@ -234,7 +234,7 @@ class ParticleTrajectoriesLookup():
                                     dtype=bool)
         # By default, all trajectories are invalid
         self.is_valid = np.zeros((num_entries, trajectory_length), dtype=bool)
-        self.cls_id = np.zeros((num_entries, ), dtype=np.int64)
+        self.cls_ids = np.zeros((num_entries, ), dtype=np.int64)
 
     def __len__(self) -> int:
         return self.num_entries
@@ -243,7 +243,7 @@ class ParticleTrajectoriesLookup():
         points = self.world_points[particle_id]
         timestamps = self.timestamps[particle_id]
         is_occluded = self.is_occluded[particle_id]
-        cls_id = self.cls_id[particle_id]
+        cls_id = self.cls_ids[particle_id]
 
         trajectory = {
             timestamp: EstimatedParticle(point, occluded)
@@ -255,11 +255,11 @@ class ParticleTrajectoriesLookup():
     def __setitem__(self, particle_id: ParticleID,
                     data_tuple: Tuple[NDArray, NDArray, NDArray,
                                       ParticleClassId]):
-        points, timestamps, is_occludeds, cls_id = data_tuple
+        points, timestamps, is_occludeds, cls_ids = data_tuple
         self.world_points[particle_id] = points
         self.timestamps[particle_id] = timestamps
         self.is_occluded[particle_id] = is_occludeds
-        self.cls_id[particle_id] = cls_id
+        self.cls_ids[particle_id] = cls_ids
         self.is_valid[particle_id] = True
 
 
