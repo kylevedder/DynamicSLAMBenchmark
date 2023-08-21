@@ -10,18 +10,6 @@ import numpy as np
 from .argoverse_supervised_scene_flow import ArgoverseSupervisedSceneFlowSequenceLoader, ArgoverseSupervisedSceneFlowSequence
 
 
-def _build_result_entry(
-        point_idx: int, source_point: np.ndarray, target_point: np.ndarray,
-        pc_class_id: int, subsequence_src_index: int,
-        subsequence_tgt_index: int) -> Tuple[int, ParticleTrajectory]:
-    particle_trajectory = ParticleTrajectory(
-        point_idx, {
-            subsequence_src_index: EstimatedParticle(source_point, False),
-            subsequence_tgt_index: EstimatedParticle(target_point, False)
-        }, ArgoverseSupervisedSceneFlowSequence.get_class_str(pc_class_id))
-    return point_idx, particle_trajectory
-
-
 class Argoverse2SceneFlow():
     """
     Wrapper for the Argoverse 2 dataset.
@@ -115,7 +103,7 @@ class Argoverse2SceneFlow():
         timestamp_array = np.array([subsequence_src_index] *
                                    len(pc_points_array))
 
-        query_particles = EfficientQueryParticleLookup(len(pc_points_array))
+        query_particles = QueryParticleLookup(len(pc_points_array))
 
         query_particles[np.arange(len(pc_points_array))] = (pc_points_array,
                                                             timestamp_array)
@@ -145,7 +133,7 @@ class Argoverse2SceneFlow():
         metadata_setup_end = time.time()
 
         particle_trajectories: Dict[ParticleID, ParticleTrajectory] = {}
-        particle_trajectories = EfficientParticleTrajectoriesLookup(
+        particle_trajectories = ParticleTrajectoriesLookup(
             len(source_pc), 2)
 
         points = np.stack([source_pc, target_pc], axis=1)
@@ -169,9 +157,9 @@ class Argoverse2SceneFlow():
 
         result_build_end = time.time()
 
-        print("\tMetadata setup: ", metadata_setup_end - metadata_setup_start)
-        print("\tDict build: ", dict_build_end - metadata_setup_end)
-        print("\tResult build: ", result_build_end - dict_build_end)
+        # print("\tMetadata setup: ", metadata_setup_end - metadata_setup_start)
+        # print("\tDict build: ", dict_build_end - metadata_setup_end)
+        # print("\tResult build: ", result_build_end - dict_build_end)
 
         return result
 
@@ -212,13 +200,13 @@ class Argoverse2SceneFlow():
             in_subsequence_tgt_index)
         make_results_scene_sequence_end = time.time()
 
-        print("Load frames: ", load_frames_end - load_frames_start)
-        print("Make scene sequence: ",
-              make_scene_sequence_end - load_frames_end)
-        print("Make query scene sequence: ",
-              make_query_scene_sequence_end - make_scene_sequence_end)
-        print("Make results scene sequence: ",
-              make_results_scene_sequence_end - make_query_scene_sequence_end)
+        # print("Load frames: ", load_frames_end - load_frames_start)
+        # print("Make scene sequence: ",
+        #       make_scene_sequence_end - load_frames_end)
+        # print("Make query scene sequence: ",
+        #       make_query_scene_sequence_end - make_scene_sequence_end)
+        # print("Make results scene sequence: ",
+        #       make_results_scene_sequence_end - make_query_scene_sequence_end)
 
         print(f"Argoverse2 Scene Flow dataset __getitem__({dataset_idx}) end")
 

@@ -1,7 +1,7 @@
 import numpy as np
 import open3d as o3d
-from .se3 import SE3
-from .camera_projection import CameraProjection
+from scene_trajectory_benchmark.datastructures import SE3, CameraProjection
+
 
 
 def to_fixed_array(array: np.ndarray,
@@ -106,7 +106,7 @@ class PointCloud():
                                         image_coordinate_depths))
 
     def transform(self, se3: SE3) -> 'PointCloud':
-        assert isinstance(se3, SE3)
+        assert isinstance(se3, SE3), f'se3 must be an SE3, got {type(se3)}, expected {SE3}'
         return PointCloud(se3.transform_points(self.points))
     
     def transform_masked(self, se3: SE3, mask: np.ndarray) -> 'PointCloud':
