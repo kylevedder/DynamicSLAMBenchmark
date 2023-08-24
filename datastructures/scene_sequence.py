@@ -10,6 +10,8 @@ from .se3 import SE3
 from .o3d_visualizer import O3DVisualizer
 
 from dataclasses import dataclass
+# import named tuple
+from collections import namedtuple
 
 # Type alias for particle IDs
 ParticleID = int
@@ -80,6 +82,11 @@ def _particle_id_to_color(
                      ((hash_val >> 8) & 0xff) / 255, (hash_val & 0xff) / 255])
 
 
+@dataclass
+class RawSceneItem():
+    pc_frame : PointCloudFrame
+    rgb_frame : RGBFrame
+
 class RawSceneSequence():
     """
     This class contains only the raw percepts from a sequence. Its goal is to 
@@ -103,11 +110,11 @@ class RawSceneSequence():
     def __len__(self):
         return len(self.get_percept_timesteps())
 
-    def __getitem__(self, timestamp: int) -> Tuple[PointCloudFrame, RGBFrame]:
+    def __getitem__(self, timestamp: int) -> RawSceneItem:
         assert isinstance(
             timestamp, int), f"timestamp must be an int, got {type(timestamp)}"
         pc_frame, rgb_frame = self.percept_lookup[timestamp]
-        return pc_frame, rgb_frame
+        return RawSceneItem(pc_frame, rgb_frame)
 
     def visualize(self, vis: O3DVisualizer) -> O3DVisualizer:
         timesteps = self.get_percept_timesteps()
@@ -117,6 +124,11 @@ class RawSceneSequence():
             vis.add_pc_frame(pc_frame, color=[grayscale_color[idx]] * 3)
             vis.add_pose(pc_frame.global_pose)
         return vis
+
+    def __eq__(self, __value: object) -> bool:
+        if not isinstance(__value, RawSceneSequence):
+            return False
+        return self.percept_lookup == __value.percept_lookup
 
 
 class QueryParticleLookup():
@@ -215,7 +227,36 @@ class QuerySceneSequence:
         return vis
 
 
-class ParticleTrajectoriesLookup():
+class EstimatedParticleTrajectories():
+    """
+    """
+
+    def __init__(self, num_entries: int, trajectory_length: int):
+        self.num_entries = num_entries
+        self.trajectory_length = trajectory_length
+
+        self.world_points = np.zeros((num_entries, trajectory_length, 3),
+                                     dtype=np.float32)
+        self.timestamps = np.zeros((num_entries, trajectory_length),
+                                   dtype=np.int64)
+        self.is_occluded = np.zeros((num_entries, trajectory_length),
+                                    dtype=bool)
+        # By default, all trajectories are invalid
+        self.is_valid = np.zeros((num_entries, trajectory_length), dtype=bool)
+
+    def __len__(self) -> int:
+        return self.num_entries
+
+    def __setitem__(self, particle_id: ParticleID,
+                    data_tuple: Tuple[NDArray, NDArray, NDArray]):
+        points, timestamps, is_occludeds = data_tuple
+        self.world_points[particle_id] = points
+        self.timestamps[particle_id] = timestamps
+        self.is_occluded[particle_id] = is_occludeds
+        self.is_valid[particle_id] = True
+
+
+class GroundTruthParticleTrajectories():
     """
     This class is an efficient lookup table for particle trajectories.
 
@@ -262,29 +303,6 @@ class ParticleTrajectoriesLookup():
         self.cls_ids[particle_id] = cls_ids
         self.is_valid[particle_id] = True
 
-
-class ResultsSceneSequence:
-    """
-    This class describes a scene sequence result.
-
-    A result is a series of points + timestamps in the global frame of the
-    scene.
-    """
-
-    def __init__(self, scene_sequence: RawSceneSequence,
-                 particle_trajectories: ParticleTrajectoriesLookup):
-        assert isinstance(scene_sequence, RawSceneSequence), \
-            f"scene_sequence must be a RawSceneSequence, got {type(scene_sequence)}"
-
-        assert isinstance(particle_trajectories, ParticleTrajectoriesLookup), \
-            f"particle_frames must be a dict, got {type(particle_trajectories)}"
-        self.scene_sequence = scene_sequence
-
-        self.particle_trajectories = particle_trajectories
-
-    def __len__(self) -> int:
-        return len(self.particle_trajectories)
-
     def visualize(self,
                   vis: O3DVisualizer,
                   percent_subsample: Union[None, float] = None,
@@ -297,8 +315,8 @@ class ResultsSceneSequence:
             every_kth_particle = 1
 
         # Shape: points, 2, 3
-        world_points = self.particle_trajectories.world_points
-        is_valid = self.particle_trajectories.is_valid
+        world_points = self.world_points
+        is_valid = self.is_valid
 
         vis.add_trajectories(world_points)
         return vis

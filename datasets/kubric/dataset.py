@@ -1,4 +1,5 @@
 from scene_trajectory_benchmark.datastructures import *
+from scene_trajectory_benchmark.eval import Evaluator
 from pathlib import Path
 import pickle
 import numpy as np
@@ -141,10 +142,10 @@ class KubricSequence():
         return QuerySceneSequence(raw_scene_sequence, query_particles,
                                   query_timesteps)
 
-    def to_result_scene_sequence(self) -> ResultsSceneSequence:
+    def to_result_scene_sequence(self) -> GroundTruthParticleTrajectories:
         raw_scene_sequence = self.to_raw_scene_sequence()
         particle_trajectories = self._get_particle_trajectories()
-        return ResultsSceneSequence(raw_scene_sequence, particle_trajectories)
+        return GroundTruthParticleTrajectories(raw_scene_sequence, particle_trajectories)
 
 
 class KubricSequenceLoader():
@@ -177,7 +178,7 @@ class Kubric():
         return len(self.sequence_loader)
 
     def __getitem__(self,
-                    idx) -> Tuple[QuerySceneSequence, ResultsSceneSequence]:
+                    idx) -> Tuple[QuerySceneSequence, GroundTruthParticleTrajectories]:
 
         sequence = self.sequence_loader[idx]
 
@@ -185,3 +186,7 @@ class Kubric():
         results_scene_sequence = sequence.to_result_scene_sequence()
 
         return query_scene_sequence, results_scene_sequence
+    
+    def evaluator(self) -> Evaluator:
+        # Builds the evaluator object for this dataset.
+        return Evaluator(self)

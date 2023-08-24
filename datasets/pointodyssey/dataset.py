@@ -272,10 +272,10 @@ class PointOdysseySequence():
         return QuerySceneSequence(raw_scene_sequence, query_particles,
                                   query_timesteps)
 
-    def to_result_scene_sequence(self) -> ResultsSceneSequence:
+    def to_result_scene_sequence(self) -> GroundTruthParticleTrajectories:
         raw_scene_sequence = self.to_raw_scene_sequence()
         particle_trajectories = self._get_particle_trajectories()
-        return ResultsSceneSequence(raw_scene_sequence, particle_trajectories)
+        return GroundTruthParticleTrajectories(raw_scene_sequence, particle_trajectories)
 
 
 class PointOdysseySequenceLoader():
@@ -313,7 +313,7 @@ class PointOdyssey():
         return len(self.sequence_loader)
 
     def __getitem__(self,
-                    idx) -> Tuple[QuerySceneSequence, ResultsSceneSequence]:
+                    idx) -> Tuple[QuerySceneSequence, GroundTruthParticleTrajectories]:
 
         sequence = self.sequence_loader[idx]
         print("To query scene sequence...")

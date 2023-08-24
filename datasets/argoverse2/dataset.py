@@ -8,6 +8,7 @@ import time
 import numpy as np
 
 from .argoverse_supervised_scene_flow import ArgoverseSupervisedSceneFlowSequenceLoader, ArgoverseSupervisedSceneFlowSequence
+from scene_trajectory_benchmark.eval import Evaluator
 
 
 class Argoverse2SceneFlow():
@@ -114,7 +115,7 @@ class Argoverse2SceneFlow():
     def _make_results_scene_sequence(
             self, scene_sequence: RawSceneSequence,
             subsequence_frames: List[Dict], subsequence_src_index: int,
-            subsequence_tgt_index: int) -> ResultsSceneSequence:
+            subsequence_tgt_index: int) -> GroundTruthParticleTrajectories:
         # Build query scene sequence. This requires enumerating all points in
         # the source frame and the associated flowed points.
 
@@ -132,8 +133,7 @@ class Argoverse2SceneFlow():
 
         metadata_setup_end = time.time()
 
-        particle_trajectories: Dict[ParticleID, ParticleTrajectory] = {}
-        particle_trajectories = ParticleTrajectoriesLookup(len(source_pc), 2)
+        particle_trajectories = GroundTruthParticleTrajectories(len(source_pc), 2)
 
         points = np.stack([source_pc, target_pc], axis=1)
         timestamps = np.array([subsequence_src_index, subsequence_tgt_index])
@@ -150,23 +150,19 @@ class Argoverse2SceneFlow():
         #         subsequence_src_index, subsequence_tgt_index)
         #     particle_trajectories[key] = value
 
-        dict_build_end = time.time()
-
-        result = ResultsSceneSequence(scene_sequence, particle_trajectories)
-
-        result_build_end = time.time()
-
         # print("\tMetadata setup: ", metadata_setup_end - metadata_setup_start)
         # print("\tDict build: ", dict_build_end - metadata_setup_end)
         # print("\tResult build: ", result_build_end - dict_build_end)
 
-        return result
+        return particle_trajectories
+    
+    # def _get_item_memory_cache(self, dataset_idx):
 
     def __getitem__(
         self,
         dataset_idx,
         verbose: bool = False
-    ) -> Tuple[QuerySceneSequence, ResultsSceneSequence]:
+    ) -> Tuple[QuerySceneSequence, GroundTruthParticleTrajectories]:
 
         if verbose:
             print(
@@ -212,6 +208,12 @@ class Argoverse2SceneFlow():
         # print("Make results scene sequence: ",
         #       make_results_scene_sequence_end - make_query_scene_sequence_end)
         if verbose:
-            print(f"Argoverse2 Scene Flow dataset __getitem__({dataset_idx}) end")
+            print(
+                f"Argoverse2 Scene Flow dataset __getitem__({dataset_idx}) end"
+            )
 
         return query_scene_sequence, results_scene_sequence
+
+    def evaluator(self) -> Evaluator:
+        # Builds the evaluator object for this dataset.
+        return Evaluator(self)
