@@ -84,8 +84,9 @@ def _particle_id_to_color(
 
 @dataclass
 class RawSceneItem():
-    pc_frame : PointCloudFrame
-    rgb_frame : RGBFrame
+    pc_frame: PointCloudFrame
+    rgb_frame: RGBFrame
+
 
 class RawSceneSequence():
     """
@@ -136,10 +137,12 @@ class QueryParticleLookup():
     This class is an efficient lookup table for query particles.
     """
 
-    def __init__(self, num_entries: int):
+    def __init__(self, num_entries: int, query_init_timestamp: Timestamp):
         self.num_entries = num_entries
-        self.world_particles = np.zeros((num_entries, 3), dtype=np.float32)
-        self.timestamps = np.zeros((num_entries, ), dtype=np.int64)
+        self.query_init_world_particles = np.zeros((num_entries, 3),
+                                                   dtype=np.float32)
+        self.query_init_timestamp = query_init_timestamp
+        self.is_valid = np.zeros((num_entries, ), dtype=bool)
 
     def __len__(self) -> int:
         return self.num_entries
@@ -148,18 +151,18 @@ class QueryParticleLookup():
             self, particle_id: ParticleID) -> Tuple[WorldParticle, Timestamp]:
         assert particle_id < self.num_entries, \
             f"particle_id {particle_id} must be less than {self.num_entries}"
-        return self.world_particles[particle_id], self.timestamps[particle_id]
+        return self.query_init_world_particles[
+            particle_id], self.query_init_timestamp
 
-    def __setitem__(self, particle_id: ParticleID, value: Tuple[WorldParticle,
-                                                                Timestamp]):
+    def __setitem__(self, particle_id: ParticleID, value: WorldParticle):
         assert (particle_id < self.num_entries).all(), \
             f"particle_ids {particle_id[particle_id >= self.num_entries]} must be less than {self.num_entries}"
-        self.world_particles[particle_id] = value[0]
-        self.timestamps[particle_id] = value[1]
+        self.query_init_world_particles[particle_id] = value
+        self.is_valid[particle_id] = True
 
     @property
     def particle_ids(self) -> NDArray:
-        return np.arange(self.num_entries)
+        return np.arange(self.num_entries)[self.is_valid]
 
 
 class QuerySceneSequence:
@@ -173,13 +176,13 @@ class QuerySceneSequence:
 
     def __init__(self, scene_sequence: RawSceneSequence,
                  query_particles: QueryParticleLookup,
-                 query_timestamps: List[Timestamp]):
+                 query_trajectory_timestamps: List[Timestamp]):
         assert isinstance(scene_sequence, RawSceneSequence), \
             f"scene_sequence must be a RawSceneSequence, got {type(scene_sequence)}"
         assert isinstance(query_particles, QueryParticleLookup), \
             f"query_particles must be a dict, got {type(query_particles)}"
-        assert isinstance(query_timestamps, list), \
-            f"query_timestamps must be a list, got {type(query_timestamps)}"
+        assert isinstance(query_trajectory_timestamps, list), \
+            f"query_timestamps must be a list, got {type(query_trajectory_timestamps)}"
 
         self.scene_sequence = scene_sequence
 
@@ -188,19 +191,19 @@ class QuerySceneSequence:
         ###################################################
 
         # Check that the query timestamps all have corresponding percepts
-        assert set(query_timestamps).issubset(set(self.scene_sequence.get_percept_timesteps())), \
-            f"Query timestamps {query_timestamps} must be a subset of the scene sequence percepts {self.scene_sequence.get_percept_timesteps()}"
+        assert set(query_trajectory_timestamps).issubset(set(self.scene_sequence.get_percept_timesteps())), \
+            f"Query timestamps {query_trajectory_timestamps} must be a subset of the scene sequence percepts {self.scene_sequence.get_percept_timesteps()}"
 
         # Check that the query points all have corresponding timestamps
         # assert len(
         #     set(self.scene_sequence.get_percept_timesteps()).intersection(
         #         set([t for _, t in query_particles.values()]))) > 0
 
-        self.query_timestamps = query_timestamps
+        self.query_trajectory_timestamps = query_trajectory_timestamps
         self.query_particles = query_particles
 
     def __len__(self) -> int:
-        return len(self.query_timestamps)
+        return len(self.query_trajectory_timestamps)
 
     def visualize(self,
                   vis: O3DVisualizer,
@@ -214,7 +217,7 @@ class QuerySceneSequence:
             every_kth_particle = 1
         # Visualize the query points ordered by particle ID
         particle_ids = self.query_particles.particle_ids
-        world_particles = self.query_particles.world_particles
+        world_particles = self.query_particles.query_init_world_particles
 
         kth_particle_ids = particle_ids[::every_kth_particle]
         kth_world_particles = world_particles[::every_kth_particle]
@@ -228,21 +231,26 @@ class QuerySceneSequence:
 
 
 class EstimatedParticleTrajectories():
-    """
-    """
 
-    def __init__(self, num_entries: int, trajectory_length: int):
+    def __init__(self, num_entries: int, trajectory_timestamps: np.ndarray):
         self.num_entries = num_entries
-        self.trajectory_length = trajectory_length
+        assert trajectory_timestamps.ndim == 1, \
+            f"trajectory_timestamps must be a 1D array, got {trajectory_timestamps.ndim}"
+        self.trajectory_timestamps = trajectory_timestamps
+        self.trajectory_length = len(trajectory_timestamps)
 
-        self.world_points = np.zeros((num_entries, trajectory_length, 3),
+        self.world_points = np.zeros((num_entries, self.trajectory_length, 3),
                                      dtype=np.float32)
-        self.timestamps = np.zeros((num_entries, trajectory_length),
-                                   dtype=np.int64)
-        self.is_occluded = np.zeros((num_entries, trajectory_length),
+
+        self.is_occluded = np.zeros((num_entries, self.trajectory_length),
                                     dtype=bool)
         # By default, all trajectories are invalid
-        self.is_valid = np.zeros((num_entries, trajectory_length), dtype=bool)
+        self.is_valid = np.zeros((num_entries, self.trajectory_length),
+                                 dtype=bool)
+    
+    def valid_particle_ids(self) -> NDArray:
+        is_valid_sum = self.is_valid.sum(axis=1)
+        return np.arange(self.num_entries)[is_valid_sum > 0]
 
     def __len__(self) -> int:
         return self.num_entries
@@ -251,7 +259,6 @@ class EstimatedParticleTrajectories():
                     data_tuple: Tuple[NDArray, NDArray, NDArray]):
         points, timestamps, is_occludeds = data_tuple
         self.world_points[particle_id] = points
-        self.timestamps[particle_id] = timestamps
         self.is_occluded[particle_id] = is_occludeds
         self.is_valid[particle_id] = True
 
@@ -263,45 +270,38 @@ class GroundTruthParticleTrajectories():
     It is designed to present like Dict[ParticleID, ParticleTrajectory] but backed by a numpy array.
     """
 
-    def __init__(self, num_entries: int, trajectory_length: int):
+    def __init__(self, num_entries: int, trajectory_timestamps: np.ndarray):
         self.num_entries = num_entries
-        self.trajectory_length = trajectory_length
+        assert trajectory_timestamps.ndim == 1, \
+            f"trajectory_timestamps must be a 1D array, got {trajectory_timestamps.ndim}"
+        self.trajectory_timestamps = trajectory_timestamps
+        self.trajectory_length = len(trajectory_timestamps)
 
-        self.world_points = np.zeros((num_entries, trajectory_length, 3),
+        self.world_points = np.zeros((num_entries, self.trajectory_length, 3),
                                      dtype=np.float32)
-        self.timestamps = np.zeros((num_entries, trajectory_length),
-                                   dtype=np.int64)
-        self.is_occluded = np.zeros((num_entries, trajectory_length),
+        self.is_occluded = np.zeros((num_entries, self.trajectory_length),
                                     dtype=bool)
         # By default, all trajectories are invalid
-        self.is_valid = np.zeros((num_entries, trajectory_length), dtype=bool)
+        self.is_valid = np.zeros((num_entries, self.trajectory_length),
+                                 dtype=bool)
         self.cls_ids = np.zeros((num_entries, ), dtype=np.int64)
 
     def __len__(self) -> int:
         return self.num_entries
 
-    def __getitem__(self, particle_id: ParticleID) -> ParticleTrajectory:
-        points = self.world_points[particle_id]
-        timestamps = self.timestamps[particle_id]
-        is_occluded = self.is_occluded[particle_id]
-        cls_id = self.cls_ids[particle_id]
-
-        trajectory = {
-            timestamp: EstimatedParticle(point, occluded)
-            for point, timestamp, occluded in zip(points, timestamps,
-                                                  is_occluded)
-        }
-        return ParticleTrajectory(particle_id, trajectory, cls_id)
-
     def __setitem__(self, particle_id: ParticleID,
-                    data_tuple: Tuple[NDArray, NDArray, NDArray,
-                                      ParticleClassId]):
-        points, timestamps, is_occludeds, cls_ids = data_tuple
+                    data_tuple: Tuple[NDArray, NDArray, ParticleClassId,
+                                      NDArray]):
+        points, is_occludeds, cls_ids, is_valids = data_tuple
         self.world_points[particle_id] = points
-        self.timestamps[particle_id] = timestamps
         self.is_occluded[particle_id] = is_occludeds
         self.cls_ids[particle_id] = cls_ids
-        self.is_valid[particle_id] = True
+        self.is_valid[particle_id] = is_valids
+
+    def valid_particle_ids(self) -> NDArray:
+        is_valid_sum = self.is_valid.sum(axis=1)
+        return np.arange(self.num_entries)[is_valid_sum > 0]
+
 
     def visualize(self,
                   vis: O3DVisualizer,

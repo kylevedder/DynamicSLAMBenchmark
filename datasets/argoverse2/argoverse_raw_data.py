@@ -24,8 +24,10 @@ class ArgoverseRawSequence():
                  log_id: str,
                  dataset_dir: Path,
                  verbose: bool = False,
+                 POINT_CLOUD_RANGE=(-48, -48, -2.5, 48, 48, 2.5),
                  sample_every: Optional[int] = None):
         self.log_id = log_id
+        self.POINT_CLOUD_RANGE = POINT_CLOUD_RANGE
 
         self.dataset_dir = Path(dataset_dir)
         assert self.dataset_dir.is_dir(
@@ -214,6 +216,16 @@ class ArgoverseRawSequence():
                 np.array(global_point_cloud[:, 2] - ground_height_values) < 0)
         return is_ground_boolean_arr
 
+    def is_in_range(self, global_point_cloud: PointCloud) -> np.ndarray:
+        xmin = self.POINT_CLOUD_RANGE[0]
+        ymin = self.POINT_CLOUD_RANGE[1]
+        zmin = self.POINT_CLOUD_RANGE[2]
+        xmax = self.POINT_CLOUD_RANGE[3]
+        ymax = self.POINT_CLOUD_RANGE[4]
+        zmax = self.POINT_CLOUD_RANGE[5]
+        return global_point_cloud.within_region_mask(xmin, xmax, ymin, ymax,
+                                                     zmin, zmax)
+
     def __repr__(self) -> str:
         return f'ArgoverseSequence with {len(self)} frames'
 
@@ -273,6 +285,10 @@ class ArgoverseRawSequence():
         relative_global_frame_pc_no_ground = relative_global_frame_pc_with_ground.mask_points(
             ~is_ground_points)
         ego_pc_no_ground = ego_pc.mask_points(~is_ground_points)
+
+        in_range_mask_with_ground = self.is_in_range(relative_global_frame_pc_with_ground)
+        in_range_mask_no_ground = self.is_in_range(relative_global_frame_pc_no_ground)
+
         return {
             "ego_pc": ego_pc_no_ground,
             "ego_pc_with_ground": ego_pc,
@@ -280,6 +296,8 @@ class ArgoverseRawSequence():
             "relative_pc_with_ground": relative_global_frame_pc_with_ground,
             "relative_pose": relative_pose,
             "is_ground_points": is_ground_points,
+            "in_range_mask": in_range_mask_with_ground,
+            "in_range_mask_no_ground": in_range_mask_no_ground,
             "rgb": img,
             "rgb_camera_projection": self.rgb_camera_projection,
             "rgb_camera_ego_pose": self.rgb_camera_ego_pose,

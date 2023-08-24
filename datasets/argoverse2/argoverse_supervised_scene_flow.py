@@ -124,6 +124,10 @@ class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
             is_ground0 = None
 
         ego_pc_no_ground = ego_pc.mask_points(~is_ground_points)
+
+        in_range_mask = self.is_in_range(relative_global_frame_pc_with_ground)
+        in_range_mask_no_ground = self.is_in_range(relative_global_frame_pc)
+
         return {
             "ego_pc": ego_pc_no_ground,
             "ego_pc_with_ground": ego_pc,
@@ -132,6 +136,8 @@ class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
             "relative_pc": relative_global_frame_pc,
             "relative_pc_with_ground": relative_global_frame_pc_with_ground,
             "is_ground_points": is_ground_points,
+            "in_range_mask": in_range_mask_no_ground,
+            "in_range_mask_with_ground": in_range_mask,
             "rgb": img,
             "rgb_camera_projection": self.rgb_camera_projection,
             "rgb_camera_ego_pose": self.rgb_camera_ego_pose,
