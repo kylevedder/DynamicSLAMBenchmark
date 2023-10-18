@@ -121,9 +121,10 @@ class RawSceneSequence():
         timesteps = self.get_percept_timesteps()
         grayscale_color = np.linspace(0, 1, len(timesteps) + 1)
         for idx, timestamp in enumerate(timesteps):
-            pc_frame, rgb_frame = self[timestamp]
-            vis.add_pc_frame(pc_frame, color=[grayscale_color[idx]] * 3)
-            vis.add_pose(pc_frame.global_pose)
+            item : RawSceneItem = self[timestamp]
+            
+            vis.add_pc_frame(item.pc_frame, color=[grayscale_color[idx]] * 3)
+            vis.add_pose(item.pc_frame.global_pose)
         return vis
 
     def __eq__(self, __value: object) -> bool:
@@ -163,6 +164,9 @@ class QueryParticleLookup():
     @property
     def particle_ids(self) -> NDArray:
         return np.arange(self.num_entries)[self.is_valid]
+    
+    def valid_query_init_world_particles(self) -> NDArray:
+        return self.query_init_world_particles[self.is_valid]
 
 
 class QuerySceneSequence:
@@ -217,14 +221,20 @@ class QuerySceneSequence:
             every_kth_particle = 1
         # Visualize the query points ordered by particle ID
         particle_ids = self.query_particles.particle_ids
-        world_particles = self.query_particles.query_init_world_particles
+        world_particles = self.query_particles.valid_query_init_world_particles()
 
         kth_particle_ids = particle_ids[::every_kth_particle]
         kth_world_particles = world_particles[::every_kth_particle]
+
+        assert len(kth_particle_ids) == len(kth_world_particles), \
+            f"Expected kth_particle_ids and kth_world_particles to have the same length, got {len(kth_particle_ids)} and {len(kth_world_particles)} instead"
+
         kth_particle_colors = [
             _particle_id_to_color(particle_id)
             for particle_id in kth_particle_ids
         ]
+        assert len(kth_particle_colors) == len(kth_particle_ids), \
+            f"Expected kth_particle_colors and kth_particle_ids to have the same length, got {len(kth_particle_colors)} and {len(kth_particle_ids)} instead"
 
         vis.add_spheres(kth_world_particles, 0.1, kth_particle_colors)
         return vis
@@ -247,7 +257,7 @@ class EstimatedParticleTrajectories():
         # By default, all trajectories are invalid
         self.is_valid = np.zeros((num_entries, self.trajectory_length),
                                  dtype=bool)
-    
+
     def valid_particle_ids(self) -> NDArray:
         is_valid_sum = self.is_valid.sum(axis=1)
         return np.arange(self.num_entries)[is_valid_sum > 0]
@@ -270,7 +280,8 @@ class GroundTruthParticleTrajectories():
     It is designed to present like Dict[ParticleID, ParticleTrajectory] but backed by a numpy array.
     """
 
-    def __init__(self, num_entries: int, trajectory_timestamps: np.ndarray):
+    def __init__(self, num_entries: int, trajectory_timestamps: np.ndarray,
+                 query_timestamp: int):
         self.num_entries = num_entries
         assert trajectory_timestamps.ndim == 1, \
             f"trajectory_timestamps must be a 1D array, got {trajectory_timestamps.ndim}"
@@ -285,6 +296,9 @@ class GroundTruthParticleTrajectories():
         self.is_valid = np.zeros((num_entries, self.trajectory_length),
                                  dtype=bool)
         self.cls_ids = np.zeros((num_entries, ), dtype=np.int64)
+        self.query_timestamp = query_timestamp
+        assert self.query_timestamp in self.trajectory_timestamps, \
+            f"query_timestamp {self.query_timestamp} must be in trajectory_timestamps {self.trajectory_timestamps}"
 
     def __len__(self) -> int:
         return self.num_entries
@@ -301,7 +315,6 @@ class GroundTruthParticleTrajectories():
     def valid_particle_ids(self) -> NDArray:
         is_valid_sum = self.is_valid.sum(axis=1)
         return np.arange(self.num_entries)[is_valid_sum > 0]
-
 
     def visualize(self,
                   vis: O3DVisualizer,

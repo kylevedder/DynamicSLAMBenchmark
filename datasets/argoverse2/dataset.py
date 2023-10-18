@@ -114,8 +114,8 @@ class Argoverse2SceneFlow():
                                   query_timestamps)
 
     def _make_results_scene_sequence(
-            self, scene_sequence: RawSceneSequence,
-            subsequence_frames: List[Dict], subsequence_src_index: int,
+            self, query: QuerySceneSequence, subsequence_frames: List[Dict],
+            subsequence_src_index: int,
             subsequence_tgt_index: int) -> GroundTruthParticleTrajectories:
         # Build query scene sequence. This requires enumerating all points in
         # the source frame and the associated flowed points.
@@ -137,7 +137,8 @@ class Argoverse2SceneFlow():
 
         particle_trajectories = GroundTruthParticleTrajectories(
             len(source_pc),
-            np.array([subsequence_src_index, subsequence_tgt_index]))
+            np.array([subsequence_src_index, subsequence_tgt_index]),
+            query.query_particles.query_init_timestamp)
 
         points = np.stack([source_pc, target_pc], axis=1)
         # Stack the false false array len(source_pc) times.
@@ -203,7 +204,7 @@ class Argoverse2SceneFlow():
         make_query_scene_sequence_end = time.time()
 
         results_scene_sequence = self._make_results_scene_sequence(
-            scene_sequence, subsequence_frames, in_subsequence_src_index,
+            query_scene_sequence, subsequence_frames, in_subsequence_src_index,
             in_subsequence_tgt_index)
         make_results_scene_sequence_end = time.time()
 

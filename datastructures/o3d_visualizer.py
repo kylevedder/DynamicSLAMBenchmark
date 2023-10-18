@@ -53,7 +53,7 @@ class O3DVisualizer:
 
     def add_spheres(self, locations: List[np.ndarray], radius: float,
                     colors: List[Tuple[float, float, float]]):
-        
+        assert len(locations) == len(colors), f"Expected locations and colors to have the same length, got {len(locations)} and {len(colors)} instead"
         triangle_mesh = o3d.geometry.TriangleMesh()
         for i, location in enumerate(locations):
             sphere = o3d.geometry.TriangleMesh.create_sphere(radius=radius, resolution=2)
