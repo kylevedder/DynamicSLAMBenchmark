@@ -101,8 +101,15 @@ class RawSceneSequence():
     Additionally, we store frame conversions for each percept.
     """
 
-    def __init__(self, percept_lookup: Dict[Timestamp, Tuple[PointCloudFrame,
-                                                             RGBFrame]]):
+    def __init__(self, percept_lookup: Dict[Timestamp, RawSceneItem]):
+        assert isinstance(percept_lookup, dict), \
+            f"percept_lookup must be a dict, got {type(percept_lookup)}"
+        assert all(
+            isinstance(key, Timestamp) for key in percept_lookup.keys()), \
+            f"percept_lookup keys must be Timestamp, got {[type(key) for key in percept_lookup.keys()]}"
+        assert all(
+            isinstance(value, RawSceneItem) for value in percept_lookup.values()), \
+            f"percept_lookup values must be RawSceneItem, got {[type(value) for value in percept_lookup.values()]}"
         self.percept_lookup = percept_lookup
 
     def get_percept_timesteps(self) -> List[int]:
@@ -114,15 +121,14 @@ class RawSceneSequence():
     def __getitem__(self, timestamp: int) -> RawSceneItem:
         assert isinstance(
             timestamp, int), f"timestamp must be an int, got {type(timestamp)}"
-        pc_frame, rgb_frame = self.percept_lookup[timestamp]
-        return RawSceneItem(pc_frame, rgb_frame)
+        return self.percept_lookup[timestamp]
 
     def visualize(self, vis: O3DVisualizer) -> O3DVisualizer:
         timesteps = self.get_percept_timesteps()
         grayscale_color = np.linspace(0, 1, len(timesteps) + 1)
         for idx, timestamp in enumerate(timesteps):
-            item : RawSceneItem = self[timestamp]
-            
+            item: RawSceneItem = self[timestamp]
+
             vis.add_pc_frame(item.pc_frame, color=[grayscale_color[idx]] * 3)
             vis.add_pose(item.pc_frame.global_pose)
         return vis
@@ -164,7 +170,7 @@ class QueryParticleLookup():
     @property
     def particle_ids(self) -> NDArray:
         return np.arange(self.num_entries)[self.is_valid]
-    
+
     def valid_query_init_world_particles(self) -> NDArray:
         return self.query_init_world_particles[self.is_valid]
 
@@ -221,7 +227,8 @@ class QuerySceneSequence:
             every_kth_particle = 1
         # Visualize the query points ordered by particle ID
         particle_ids = self.query_particles.particle_ids
-        world_particles = self.query_particles.valid_query_init_world_particles()
+        world_particles = self.query_particles.valid_query_init_world_particles(
+        )
 
         kth_particle_ids = particle_ids[::every_kth_particle]
         kth_world_particles = world_particles[::every_kth_particle]
@@ -242,8 +249,12 @@ class QuerySceneSequence:
 
 class EstimatedParticleTrajectories():
 
-    def __init__(self, num_entries: int, trajectory_timestamps: np.ndarray):
+    def __init__(self, num_entries: int, trajectory_timestamps: Union[List[Timestamp], np.ndarray]):
         self.num_entries = num_entries
+
+        if isinstance(trajectory_timestamps, list):
+            trajectory_timestamps = np.array(trajectory_timestamps)
+
         assert trajectory_timestamps.ndim == 1, \
             f"trajectory_timestamps must be a 1D array, got {trajectory_timestamps.ndim}"
         self.trajectory_timestamps = trajectory_timestamps
@@ -280,9 +291,13 @@ class GroundTruthParticleTrajectories():
     It is designed to present like Dict[ParticleID, ParticleTrajectory] but backed by a numpy array.
     """
 
-    def __init__(self, num_entries: int, trajectory_timestamps: np.ndarray,
+    def __init__(self, num_entries: int, trajectory_timestamps: Union[List[Timestamp], np.ndarray],
                  query_timestamp: int):
         self.num_entries = num_entries
+
+        if isinstance(trajectory_timestamps, list):
+            trajectory_timestamps = np.array(trajectory_timestamps)
+
         assert trajectory_timestamps.ndim == 1, \
             f"trajectory_timestamps must be a 1D array, got {trajectory_timestamps.ndim}"
         self.trajectory_timestamps = trajectory_timestamps

@@ -74,7 +74,7 @@ class Argoverse2SceneFlow():
             self, subsequence_frames: List[Dict]) -> RawSceneSequence:
         # Build percept lookup. This stores the percepts for the entire sequence, with the
         # global frame being zero'd at the target frame.
-        percept_lookup: Dict[Timestamp, Tuple[PointCloudFrame, RGBFrame]] = {}
+        percept_lookup: Dict[Timestamp, RawSceneItem] = {}
         for dataset_idx, entry in enumerate(subsequence_frames):
             pc: PointCloud = entry[self.ego_pc_key]
             lidar_to_ego = SE3.identity()
@@ -88,7 +88,7 @@ class Argoverse2SceneFlow():
             rgb_frame = RGBFrame(entry["rgb"],
                                  PoseInfo(rgb_to_ego, ego_to_world),
                                  rgb_camera_projection)
-            percept_lookup[dataset_idx] = (point_cloud_frame, rgb_frame)
+            percept_lookup[dataset_idx] = RawSceneItem(pc_frame=point_cloud_frame, rgb_frame=rgb_frame)
 
         return RawSceneSequence(percept_lookup)
 
