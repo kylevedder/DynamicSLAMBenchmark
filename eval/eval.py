@@ -83,8 +83,8 @@ class Evaluator():
             eval_particle_ids][:, matched_time_axis_indices]
         pred_is_occluded = predictions.is_occluded[
             eval_particle_ids][:, matched_time_axis_indices]
-        # gt_class_ids = ground_truth.cls_ids[
-        #     eval_particle_ids][:, matched_time_axis_indices]
+
+        gt_class_ids = ground_truth.cls_ids[eval_particle_ids]
 
         # Compute the L2 error between the ground truth and the prediction points for each particle trajectory.
         l2_errors = np.linalg.norm(gt_world_points - pred_world_points, axis=2)
