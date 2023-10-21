@@ -249,7 +249,8 @@ class QuerySceneSequence:
 
 class EstimatedParticleTrajectories():
 
-    def __init__(self, num_entries: int, trajectory_timestamps: Union[List[Timestamp], np.ndarray]):
+    def __init__(self, num_entries: int,
+                 trajectory_timestamps: Union[List[Timestamp], np.ndarray]):
         self.num_entries = num_entries
 
         if isinstance(trajectory_timestamps, list):
@@ -291,9 +292,13 @@ class GroundTruthParticleTrajectories():
     It is designed to present like Dict[ParticleID, ParticleTrajectory] but backed by a numpy array.
     """
 
-    def __init__(self, num_entries: int, trajectory_timestamps: Union[List[Timestamp], np.ndarray],
-                 query_timestamp: int):
+    def __init__(self,
+                 num_entries: int,
+                 trajectory_timestamps: Union[List[Timestamp], np.ndarray],
+                 query_timestamp: int,
+                 class_name_map: Dict[ParticleClassId, str] = None):
         self.num_entries = num_entries
+        self.class_name_map = class_name_map
 
         if isinstance(trajectory_timestamps, list):
             trajectory_timestamps = np.array(trajectory_timestamps)
@@ -330,6 +335,15 @@ class GroundTruthParticleTrajectories():
     def valid_particle_ids(self) -> NDArray:
         is_valid_sum = self.is_valid.sum(axis=1)
         return np.arange(self.num_entries)[is_valid_sum > 0]
+
+    def pretty_name(self, class_id: ParticleClassId) -> str:
+        if self.class_name_map is None:
+            return str(class_id)
+
+        if class_id not in self.class_name_map:
+            return str(class_id)
+
+        return self.class_name_map[class_id]
 
     def visualize(self,
                   vis: O3DVisualizer,

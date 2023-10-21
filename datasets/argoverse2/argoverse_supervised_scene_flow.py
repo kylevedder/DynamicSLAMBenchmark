@@ -8,6 +8,7 @@ import numpy as np
 from . import ArgoverseRawSequence
 
 CATEGORY_MAP = {
+    -1: '-1BACKGROUND',
     0: 'ANIMAL',
     1: 'ARTICULATED_BUS',
     2: 'BICYCLE',

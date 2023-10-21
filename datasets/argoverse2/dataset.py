@@ -7,7 +7,7 @@ import multiprocessing
 import time
 import numpy as np
 
-from .argoverse_supervised_scene_flow import ArgoverseSupervisedSceneFlowSequenceLoader, ArgoverseSupervisedSceneFlowSequence
+from .argoverse_supervised_scene_flow import ArgoverseSupervisedSceneFlowSequenceLoader, ArgoverseSupervisedSceneFlowSequence, CATEGORY_MAP
 from scene_trajectory_benchmark.eval import Evaluator
 
 
@@ -24,7 +24,7 @@ class Argoverse2SceneFlow():
         subsequence_length: int = 2,
         with_ground: bool = True,
         cache_path: Path = Path("/tmp/")) -> None:
-        self.root_dir = root_dir
+        self.root_dir = Path(root_dir)
         self.sequence_loader = ArgoverseSupervisedSceneFlowSequenceLoader(
             root_dir)
         self.subsequence_length = subsequence_length
@@ -48,7 +48,7 @@ class Argoverse2SceneFlow():
         )
 
     def _load_dataset_to_sequence_subsequence_idx(self):
-        cache_file = self.cache_path / f"dataset_to_sequence_subsequence_idx_cache_len_{self.subsequence_length}.pkl"
+        cache_file = self.cache_path / self.root_dir.parent.name / self.root_dir.name /  f"dataset_to_sequence_subsequence_idx_cache_len_{self.subsequence_length}.pkl"
         if cache_file.exists():
             return load_pickle(cache_file)
 
@@ -138,7 +138,8 @@ class Argoverse2SceneFlow():
         particle_trajectories = GroundTruthParticleTrajectories(
             len(source_pc),
             np.array([subsequence_src_index, subsequence_tgt_index]),
-            query.query_particles.query_init_timestamp)
+            query.query_particles.query_init_timestamp, 
+            CATEGORY_MAP)
 
         points = np.stack([source_pc, target_pc], axis=1)
         # Stack the false false array len(source_pc) times.
@@ -224,4 +225,4 @@ class Argoverse2SceneFlow():
 
     def evaluator(self) -> Evaluator:
         # Builds the evaluator object for this dataset.
-        return Evaluator(self)
+        return Evaluator()

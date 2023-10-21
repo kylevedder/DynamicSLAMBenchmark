@@ -1,12 +1,30 @@
-from scene_trajectory_benchmark.datastructures import EstimatedParticleTrajectories, GroundTruthParticleTrajectories
+from scene_trajectory_benchmark.datastructures import EstimatedParticleTrajectories, GroundTruthParticleTrajectories, Timestamp, ParticleClassId
 import time
 import numpy as np
+
+from typing import Tuple, Dict, List, Set, Any, Union
+
+from dataclasses import dataclass
+from collections import defaultdict
 
 
 class Evaluator():
 
-    def __init__(self, dataset):
-        self.dataset = dataset
+    def __init__(self):
+        self.eval_frame_results: List[EvalFrameResult] = []
+
+    @staticmethod
+    def from_evaluator_list(evaluator_list: List['Evaluator']):
+        evaluator = Evaluator()
+        for e in evaluator_list:
+            evaluator.eval_frame_results.extend(e.eval_frame_results)
+        return evaluator
+    
+    def __add__(self, other: 'Evaluator'):
+        return Evaluator.from_evaluator_list([self, other])
+    
+    def __len__(self):
+        return len(self.eval_frame_results)
 
     def _validate_inputs(self, predictions: EstimatedParticleTrajectories,
                          ground_truth: GroundTruthParticleTrajectories):
@@ -47,9 +65,10 @@ class Evaluator():
         assert set(ground_truth.trajectory_timestamps).issubset(set(predictions.trajectory_timestamps)), \
             f"all timestamps for the ground truth particle trajectories must be in the estimation particle trajectories. Nonmatching timestamps: {set(ground_truth.trajectory_timestamps) - set(predictions.trajectory_timestamps)}"
 
-    def _get_indices_of_timestamps_in_both(
+    def _get_indices_of_timestamps(
             self, predictions: EstimatedParticleTrajectories,
-            ground_truth: GroundTruthParticleTrajectories):
+            ground_truth: GroundTruthParticleTrajectories,
+            query_timestamp: Timestamp):
         # create an numpy array
         pred_timestamps = predictions.trajectory_timestamps
 
@@ -61,20 +80,35 @@ class Evaluator():
         matched_idxes = sorter[np.searchsorted(pred_timestamps,
                                                traj_timestamps,
                                                sorter=sorter)]
-        return matched_idxes
+
+        # find the index of the query timestamp in traj_timestamps
+        query_idx = np.where(traj_timestamps == query_timestamp)[0][0]
+
+        return matched_idxes, query_idx
 
     def eval(self, predictions: EstimatedParticleTrajectories,
-             ground_truth: GroundTruthParticleTrajectories):
+             ground_truth: GroundTruthParticleTrajectories,
+             query_timestamp: Timestamp):
         self._validate_inputs(predictions, ground_truth)
 
         # Extract the ground truth entires for the timestamps that are in both the predictions and ground truth.
+        # It could be that the predictions have more timestamps than the ground truth.
 
-        matched_time_axis_indices = self._get_indices_of_timestamps_in_both(
-            predictions, ground_truth)
+        matched_time_axis_indices, query_idx = self._get_indices_of_timestamps(
+            predictions, ground_truth, query_timestamp)
+
         eval_particle_ids = ground_truth.valid_particle_ids()
 
-        is_valids = ground_truth.is_valid[
+        gt_is_valids = ground_truth.is_valid[
             eval_particle_ids][:, matched_time_axis_indices]
+
+        pred_is_valids = predictions.is_valid[
+            eval_particle_ids][:, matched_time_axis_indices]
+
+        # Make sure that all the pred_is_valids are true if gt_is_valids is true.
+        assert ((gt_is_valids & pred_is_valids) == gt_is_valids).all(), \
+            f"all gt_is_valids must be true if pred_is_valids is true."
+
         gt_world_points = ground_truth.world_points[
             eval_particle_ids][:, matched_time_axis_indices]
         pred_world_points = predictions.world_points[
@@ -88,5 +122,162 @@ class Evaluator():
 
         # Compute the L2 error between the ground truth and the prediction points for each particle trajectory.
         l2_errors = np.linalg.norm(gt_world_points - pred_world_points, axis=2)
+
         is_occluded_errors = np.logical_xor(gt_is_occluded, pred_is_occluded)
-        breakpoint()
+
+        # The query index L2 errors should be zero, as the query points should be the same as the entries in the ground truth.
+        assert np.isclose(l2_errors[:, query_idx], np.zeros_like(l2_errors[:, query_idx])).all(), \
+            f"l2_errors for the query index should be zero, got {l2_errors[:, query_idx]}"
+
+        if query_idx != 0:
+            raise NotImplementedError(
+                "TODO: Handle query_idx != 0 when computing speed bucketing.")
+
+        # Compute the speed of each gt particle trajectory.
+        gt_speeds = np.linalg.norm(np.diff(gt_world_points, axis=1), axis=2)
+
+        non_query_idx_l2_errors = np.delete(l2_errors, query_idx, axis=1)
+        non_query_idx_gt_world_points = np.delete(gt_world_points,
+                                                  query_idx,
+                                                  axis=1)
+
+        eval_frame_result = EvalFrameResult(non_query_idx_gt_world_points,
+                                            gt_speeds, non_query_idx_l2_errors,
+                                            gt_class_ids,
+                                            ground_truth.pretty_name)
+
+        self.eval_frame_results.append(eval_frame_result)
+
+    def _save_intermediary_results(self):
+        import pickle
+
+        with open("/tmp/frame_results/eval_frame_results.pkl", "wb") as f:
+            pickle.dump(self.eval_frame_results, f)
+
+    def compute_results(self, save_results: bool = True) -> Dict[str, float]:
+        assert len(self.eval_frame_results
+                   ) > 0, "Must call eval at least once before calling compute"
+        if save_results:
+            self._save_intermediary_results()
+
+        # From list of dicts to dict of lists
+        merged_class_error_dict = dict()
+        for eval_frame_result in self.eval_frame_results:
+            for k, v in eval_frame_result.class_error_dict.items():
+                if k not in merged_class_error_dict:
+                    merged_class_error_dict[k] = [v]
+                else:
+                    merged_class_error_dict[k].append(v)
+
+        # import matplotlib.pyplot as plt
+
+        total_points = 0
+
+        # Compute the average EPE for each key
+        result_dict = dict()
+        for k in sorted(merged_class_error_dict.keys()):
+            values = merged_class_error_dict[k]
+            epes = np.array([v.avg_epe for v in values])
+            counts = np.array([v.count for v in values])
+            # Average of the epes weighted by the counts
+            if counts.sum() == 0:
+                weighted_average_epe = np.NaN
+            else:
+                weighted_average_epe = np.average(epes, weights=(counts))
+
+            unweighted_average_epe = np.mean(epes)
+            max_epe = np.max(epes)
+            min_epe = np.min(epes)
+
+            
+
+            print(f"{k} EPE: {weighted_average_epe} count: {counts.sum()} Unweighted EPE: {unweighted_average_epe} max: {max_epe} min: {min_epe}")
+            if k.distance_threshold == 35:
+                total_points += counts.sum()
+
+            # # plot histogram of epes
+            # plt.hist(epes, bins=1000)
+            # # Vertical line at 0.021
+            # plt.axvline(x=0.021, color='r', linestyle='dashed', linewidth=2)
+            # plt.title(f"{k} EPE")
+            # plt.show()
+            result_dict[k] = weighted_average_epe
+
+        print(f"Total points: {total_points}")
+
+        return result_dict
+
+
+@dataclass(frozen=True, eq=True, order=True, repr=True)
+class SplitKey():
+    name: str
+    speed_buckets: Tuple[float, float]
+    distance_threshold: float
+
+
+@dataclass(frozen=True, eq=True, repr=True)
+class SplitValue():
+    avg_epe: float
+    count: int
+
+
+class EvalFrameResult():
+
+    def __init__(self,
+                 gt_world_points: np.ndarray,
+                 gt_speeds: np.ndarray,
+                 l2_errors: np.ndarray,
+                 gt_class_ids: np.ndarray,
+                 class_id_to_name=lambda e: e):
+        assert gt_world_points.ndim == 3, f"gt_world_points must be 3D, got {gt_world_points.ndim}"
+        assert gt_world_points.shape[:2] == l2_errors.shape, f"gt_world_points and l2_errors must have the same shape, got {gt_world_points.shape} and {l2_errors.shape}"
+        assert gt_class_ids.ndim == 1, f"gt_class_ids must be 1D, got {gt_class_ids.ndim}"
+
+        assert l2_errors.shape[0] == len(
+            gt_class_ids
+        ), f"l2_errors and gt_class_ids must have the same number of entries, got {l2_errors.shape[0]} and {len(gt_class_ids)}"
+
+        assert gt_speeds.shape[0] == len(
+            gt_class_ids
+        ), f"gt_speeds and gt_class_ids must have the same number of entries, got {gt_speeds.shape[0]} and {len(gt_class_ids)}"
+
+        assert (
+            gt_speeds.shape == l2_errors.shape
+        ), f"gt_speeds and l2_errors must have the same shape, got {gt_speeds.shape} and {l2_errors.shape}"
+
+        self.class_error_dict = {
+            k: v
+            for k, v in
+            self.make_splits(gt_world_points, gt_speeds, gt_class_ids,
+                             l2_errors, class_id_to_name)
+        }
+
+    def make_splits(self, gt_world_points, gt_speeds, gt_class_ids, l2_errors,
+                    class_id_to_name) -> List[Tuple[SplitKey, SplitValue]]:
+
+        unique_gt_classes = np.unique(gt_class_ids)
+        speed_thresholds = [(0, 0.05), (0.05, np.inf)]
+        distance_thresholds = [35, np.inf]
+
+        for class_id in unique_gt_classes:
+            for speed_min, speed_max in speed_thresholds:
+                for distance_threshold in distance_thresholds:
+                    speed_bucket_mask = (gt_speeds >= speed_min) & (gt_speeds <
+                                                                    speed_max)
+                    class_matched_mask = (gt_class_ids == class_id)
+                    distance_mask = np.linalg.norm(gt_world_points[:, :, :2],
+                                                   ord=np.inf,
+                                                   axis=2) < distance_threshold
+
+                    match_mask = speed_bucket_mask & class_matched_mask[:,
+                                                                        None] & distance_mask
+                    count = match_mask.sum()
+
+                    if count > 0:
+                        avg_epe = np.sum(l2_errors[match_mask]) / count
+                    else:
+                        avg_epe = 0
+                    class_name = class_id_to_name(class_id)
+                    yield SplitKey(class_name, (speed_min, speed_max),
+                                   distance_threshold), SplitValue(
+                                       avg_epe, count)
