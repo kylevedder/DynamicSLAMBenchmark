@@ -1,11 +1,99 @@
 from scene_trajectory_benchmark.datastructures import EstimatedParticleTrajectories, GroundTruthParticleTrajectories, Timestamp, ParticleClassId
 import time
 import numpy as np
+import pandas as pd
 
 from typing import Tuple, Dict, List, Set, Any, Union
 
 from dataclasses import dataclass
-from collections import defaultdict
+from pathlib import Path
+
+
+@dataclass(frozen=True, eq=True, order=True, repr=True)
+class SplitKey():
+    name: str
+    speed_buckets: Tuple[float, float]
+    distance_threshold: float
+
+    def __eq__(self, __value: object) -> bool:
+        # TODO: This is a hack because the hash function works but the autogen eq function doesn't.
+        return hash(self) == hash(__value)
+
+
+@dataclass(frozen=True, eq=True, repr=True)
+class SplitValue():
+    avg_epe: float
+    count: int
+    avg_speed: float
+
+    def __eq__(self, __value: object) -> bool:
+        # TODO: This is a hack because the hash function works but the autogen eq function doesn't.
+        return hash(self) == hash(__value)
+
+
+class EvalFrameResult():
+
+    def __init__(self,
+                 gt_world_points: np.ndarray,
+                 gt_speeds: np.ndarray,
+                 l2_errors: np.ndarray,
+                 gt_class_ids: np.ndarray,
+                 class_id_to_name=lambda e: e):
+        assert gt_world_points.ndim == 3, f"gt_world_points must be 3D, got {gt_world_points.ndim}"
+        assert gt_world_points.shape[:
+                                     2] == l2_errors.shape, f"gt_world_points and l2_errors must have the same shape, got {gt_world_points.shape} and {l2_errors.shape}"
+        assert gt_class_ids.ndim == 1, f"gt_class_ids must be 1D, got {gt_class_ids.ndim}"
+
+        assert l2_errors.shape[0] == len(
+            gt_class_ids
+        ), f"l2_errors and gt_class_ids must have the same number of entries, got {l2_errors.shape[0]} and {len(gt_class_ids)}"
+
+        assert gt_speeds.shape[0] == len(
+            gt_class_ids
+        ), f"gt_speeds and gt_class_ids must have the same number of entries, got {gt_speeds.shape[0]} and {len(gt_class_ids)}"
+
+        assert (
+            gt_speeds.shape == l2_errors.shape
+        ), f"gt_speeds and l2_errors must have the same shape, got {gt_speeds.shape} and {l2_errors.shape}"
+
+        self.class_error_dict = {
+            k: v
+            for k, v in
+            self.make_splits(gt_world_points, gt_speeds, gt_class_ids,
+                             l2_errors, class_id_to_name)
+        }
+
+    def make_splits(self, gt_world_points, gt_speeds, gt_class_ids, l2_errors,
+                    class_id_to_name) -> List[Tuple[SplitKey, SplitValue]]:
+
+        unique_gt_classes = np.unique(gt_class_ids)
+        speed_thresholds = [(0, 0.05), (0.05, np.inf)]
+        distance_thresholds = [35, np.inf]
+
+        for class_id in unique_gt_classes:
+            for speed_min, speed_max in speed_thresholds:
+                for distance_threshold in distance_thresholds:
+                    speed_bucket_mask = (gt_speeds >= speed_min) & (gt_speeds <
+                                                                    speed_max)
+                    class_matched_mask = (gt_class_ids == class_id)
+                    distance_mask = np.linalg.norm(gt_world_points[:, :, :2],
+                                                   ord=np.inf,
+                                                   axis=2) < distance_threshold
+
+                    match_mask = speed_bucket_mask & class_matched_mask[:,
+                                                                        None] & distance_mask
+                    count = match_mask.sum()
+
+                    if count > 0:
+                        avg_epe = np.sum(l2_errors[match_mask]) / count
+                        split_avg_speed = np.mean(gt_speeds[match_mask])
+                    else:
+                        avg_epe = 0
+                        split_avg_speed = np.NaN
+                    class_name = class_id_to_name(class_id)
+                    yield SplitKey(class_name, (speed_min, speed_max),
+                                   distance_threshold), SplitValue(
+                                       avg_epe, count, split_avg_speed)
 
 
 class Evaluator():
@@ -19,10 +107,10 @@ class Evaluator():
         for e in evaluator_list:
             evaluator.eval_frame_results.extend(e.eval_frame_results)
         return evaluator
-    
+
     def __add__(self, other: 'Evaluator'):
         return Evaluator.from_evaluator_list([self, other])
-    
+
     def __len__(self):
         return len(self.eval_frame_results)
 
@@ -154,12 +242,7 @@ class Evaluator():
         with open("/tmp/frame_results/eval_frame_results.pkl", "wb") as f:
             pickle.dump(self.eval_frame_results, f)
 
-    def compute_results(self, save_results: bool = True) -> Dict[str, float]:
-        assert len(self.eval_frame_results
-                   ) > 0, "Must call eval at least once before calling compute"
-        if save_results:
-            self._save_intermediary_results()
-
+    def _category_to_per_frame_stats(self) -> Dict[SplitKey, List[SplitValue]]:
         # From list of dicts to dict of lists
         merged_class_error_dict = dict()
         for eval_frame_result in self.eval_frame_results:
@@ -168,11 +251,11 @@ class Evaluator():
                     merged_class_error_dict[k] = [v]
                 else:
                     merged_class_error_dict[k].append(v)
+        return merged_class_error_dict
 
-        # import matplotlib.pyplot as plt
-
-        total_points = 0
-
+    def _category_to_average_stats(
+        self, merged_class_error_dict: Dict[SplitKey, SplitValue]
+    ) -> Dict[SplitKey, SplitValue]:
         # Compute the average EPE for each key
         result_dict = dict()
         for k in sorted(merged_class_error_dict.keys()):
@@ -180,104 +263,78 @@ class Evaluator():
             epes = np.array([v.avg_epe for v in values])
             counts = np.array([v.count for v in values])
             # Average of the epes weighted by the counts
-            if counts.sum() == 0:
-                weighted_average_epe = np.NaN
-            else:
-                weighted_average_epe = np.average(epes, weights=(counts))
 
-            unweighted_average_epe = np.mean(epes)
-            max_epe = np.max(epes)
-            min_epe = np.min(epes)
+            weighted_split_avg_speed = np.NaN
+            weighted_average_epe = np.NaN
+            if counts.sum() > 0:
+                valid_counts_mask = (counts > 0)
 
-            
+                weighted_average_epe = np.average(
+                    epes[valid_counts_mask],
+                    weights=(counts[valid_counts_mask]))
+                weighted_split_avg_speed = np.average(
+                    np.array([v.avg_speed for v in values])[valid_counts_mask],
+                    weights=(counts[valid_counts_mask]))
 
-            print(f"{k} EPE: {weighted_average_epe} count: {counts.sum()} Unweighted EPE: {unweighted_average_epe} max: {max_epe} min: {min_epe}")
-            if k.distance_threshold == 35:
-                total_points += counts.sum()
-
-            # # plot histogram of epes
-            # plt.hist(epes, bins=1000)
-            # # Vertical line at 0.021
-            # plt.axvline(x=0.021, color='r', linestyle='dashed', linewidth=2)
-            # plt.title(f"{k} EPE")
-            # plt.show()
-            result_dict[k] = weighted_average_epe
-
-        print(f"Total points: {total_points}")
-
+            result_dict[k] = SplitValue(weighted_average_epe, counts.sum(),
+                                        weighted_split_avg_speed)
         return result_dict
 
+    def _save_stats_tables(self, average_stats: Dict[SplitKey, SplitValue]):
 
-@dataclass(frozen=True, eq=True, order=True, repr=True)
-class SplitKey():
-    name: str
-    speed_buckets: Tuple[float, float]
-    distance_threshold: float
+        assert len(
+            average_stats
+        ) > 0, f"average_stats must have at least one entry, got {len(average_stats)}"
 
+        unique_distance_thresholds = sorted(
+            set([k.distance_threshold for k in average_stats.keys()]))
+        unique_speed_buckets = sorted(
+            set([k.speed_buckets for k in average_stats.keys()]))
+        unique_category_names = sorted(
+            set([k.name for k in average_stats.keys()]))
 
-@dataclass(frozen=True, eq=True, repr=True)
-class SplitValue():
-    avg_epe: float
-    count: int
+        for distance_threshold in unique_distance_thresholds:
 
+            raw_table_save_path = f"/tmp/frame_results/raw_table_{distance_threshold}.csv"
+            speed_table_save_path = f"/tmp/frame_results/speed_table_{distance_threshold}.csv"
 
-class EvalFrameResult():
+            # Rows are category names, columns are for speed buckets
+            epe_table = pd.DataFrame(
+                index=unique_category_names,
+                columns=[str(e) for e in unique_speed_buckets])
 
-    def __init__(self,
-                 gt_world_points: np.ndarray,
-                 gt_speeds: np.ndarray,
-                 l2_errors: np.ndarray,
-                 gt_class_ids: np.ndarray,
-                 class_id_to_name=lambda e: e):
-        assert gt_world_points.ndim == 3, f"gt_world_points must be 3D, got {gt_world_points.ndim}"
-        assert gt_world_points.shape[:2] == l2_errors.shape, f"gt_world_points and l2_errors must have the same shape, got {gt_world_points.shape} and {l2_errors.shape}"
-        assert gt_class_ids.ndim == 1, f"gt_class_ids must be 1D, got {gt_class_ids.ndim}"
+            speed_table = pd.DataFrame(
+                index=unique_category_names,
+                columns=[str(e) for e in unique_speed_buckets])
 
-        assert l2_errors.shape[0] == len(
-            gt_class_ids
-        ), f"l2_errors and gt_class_ids must have the same number of entries, got {l2_errors.shape[0]} and {len(gt_class_ids)}"
+            for category_name in unique_category_names:
+                for speed_bucket in unique_speed_buckets:
+                    key = SplitKey(category_name, speed_bucket,
+                                   distance_threshold)
+                    avg_epe = np.NaN
+                    avg_speed = np.NaN
+                    if key in average_stats:
+                        avg_epe = average_stats[key].avg_epe
+                        avg_speed = average_stats[key].avg_speed
+                    epe_table.loc[category_name, str(speed_bucket)] = avg_epe
+                    speed_table.loc[
+                        category_name, str(speed_bucket)] = avg_speed
 
-        assert gt_speeds.shape[0] == len(
-            gt_class_ids
-        ), f"gt_speeds and gt_class_ids must have the same number of entries, got {gt_speeds.shape[0]} and {len(gt_class_ids)}"
+            epe_table.to_csv(raw_table_save_path)
+            speed_table.to_csv(speed_table_save_path)
 
-        assert (
-            gt_speeds.shape == l2_errors.shape
-        ), f"gt_speeds and l2_errors must have the same shape, got {gt_speeds.shape} and {l2_errors.shape}"
+    def compute_results(self, save_results: bool = True) -> Dict[str, float]:
+        assert len(self.eval_frame_results
+                   ) > 0, "Must call eval at least once before calling compute"
+        if save_results:
+            self._save_intermediary_results()
 
-        self.class_error_dict = {
-            k: v
-            for k, v in
-            self.make_splits(gt_world_points, gt_speeds, gt_class_ids,
-                             l2_errors, class_id_to_name)
-        }
+        # From list of dicts to dict of lists
+        category_to_per_frame_stats = self._category_to_per_frame_stats()
+        category_to_average_stats = self._category_to_average_stats(
+            category_to_per_frame_stats)
+        for k, v in category_to_average_stats.items():
+            print(k, v)
 
-    def make_splits(self, gt_world_points, gt_speeds, gt_class_ids, l2_errors,
-                    class_id_to_name) -> List[Tuple[SplitKey, SplitValue]]:
-
-        unique_gt_classes = np.unique(gt_class_ids)
-        speed_thresholds = [(0, 0.05), (0.05, np.inf)]
-        distance_thresholds = [35, np.inf]
-
-        for class_id in unique_gt_classes:
-            for speed_min, speed_max in speed_thresholds:
-                for distance_threshold in distance_thresholds:
-                    speed_bucket_mask = (gt_speeds >= speed_min) & (gt_speeds <
-                                                                    speed_max)
-                    class_matched_mask = (gt_class_ids == class_id)
-                    distance_mask = np.linalg.norm(gt_world_points[:, :, :2],
-                                                   ord=np.inf,
-                                                   axis=2) < distance_threshold
-
-                    match_mask = speed_bucket_mask & class_matched_mask[:,
-                                                                        None] & distance_mask
-                    count = match_mask.sum()
-
-                    if count > 0:
-                        avg_epe = np.sum(l2_errors[match_mask]) / count
-                    else:
-                        avg_epe = 0
-                    class_name = class_id_to_name(class_id)
-                    yield SplitKey(class_name, (speed_min, speed_max),
-                                   distance_threshold), SplitValue(
-                                       avg_epe, count)
+        self._save_stats_tables(category_to_average_stats)
+        return category_to_average_stats
