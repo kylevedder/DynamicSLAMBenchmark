@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Dict, List, Tuple, Any, Union
+from typing import Dict, List, Tuple, Any, Union, Optional
 
 from numpy._typing import NDArray
 
@@ -85,7 +85,7 @@ def _particle_id_to_color(
 @dataclass
 class RawSceneItem():
     pc_frame: PointCloudFrame
-    rgb_frame: RGBFrame
+    rgb_frame: Optional[RGBFrame]
 
 
 class RawSceneSequence():

@@ -122,3 +122,6 @@ class O3DVisualizer:
         # Set lookat to be origin
         ctr.set_lookat([0, 0, 0])
         self.vis.run()
+
+    def destroy(self):
+        self.vis.destroy_window()

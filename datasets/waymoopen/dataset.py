@@ -7,11 +7,11 @@ import multiprocessing
 import time
 import numpy as np
 
-from .argoverse_supervised_scene_flow import ArgoverseSupervisedSceneFlowSequenceLoader, ArgoverseSupervisedSceneFlowSequence, CATEGORY_MAP
+from .waymo_supervised_flow import WaymoSupervisedFlowSequenceLoader, WaymoSupervisedFlowSequence, CATEGORY_MAP
 from scene_trajectory_benchmark.eval import Evaluator
 
 
-class Argoverse2SceneFlow():
+class WaymoOpenSceneFlow():
     """
     Wrapper for the Argoverse 2 dataset.
 
@@ -22,33 +22,23 @@ class Argoverse2SceneFlow():
         self,
         root_dir: Path,
         subsequence_length: int = 2,
-        with_ground: bool = True,
         cache_path: Path = Path("/tmp/")) -> None:
         self.root_dir = Path(root_dir)
-        self.sequence_loader = ArgoverseSupervisedSceneFlowSequenceLoader(
-            root_dir)
+        self.sequence_loader = WaymoSupervisedFlowSequenceLoader(root_dir)
         self.subsequence_length = subsequence_length
         self.cache_path = cache_path
-        if with_ground:
-            self.ego_pc_key = "ego_pc_with_ground"
-            self.ego_pc_flowed_key = "ego_flowed_pc_with_ground"
-            self.relative_pc_key = "relative_pc_with_ground"
-            self.relative_pc_flowed_key = "relative_flowed_pc_with_ground"
-            self.pc_classes_key = "pc_classes_with_ground"
-            self.in_range_mask_key = "in_range_mask_with_ground"
-        else:
-            self.ego_pc_key = "ego_pc"
-            self.ego_pc_flowed_key = "ego_flowed_pc"
-            self.relative_pc_key = "relative_pc"
-            self.relative_pc_flowed_key = "relative_flowed_pc"
-            self.pc_classes_key = "pc_classes"
-            self.in_range_mask_key = "in_range_mask"
+
+        self.ego_pc_key = "ego_pc"
+        self.ego_pc_flowed_key = "ego_flowed_pc"
+        self.relative_pc_key = "relative_pc"
+        self.relative_pc_flowed_key = "relative_flowed_pc"
+        self.pc_classes_key = "pc_classes"
 
         self.dataset_to_sequence_subsequence_idx = self._load_dataset_to_sequence_subsequence_idx(
         )
 
     def _load_dataset_to_sequence_subsequence_idx(self):
-        cache_file = self.cache_path / "argo" / self.root_dir.parent.name / self.root_dir.name /  f"dataset_to_sequence_subsequence_idx_cache_len_{self.subsequence_length}.pkl"
+        cache_file = self.cache_path / "waymo" / self.root_dir.parent.name / self.root_dir.name / f"dataset_to_sequence_subsequence_idx_cache_len_{self.subsequence_length}.pkl"
         if cache_file.exists():
             return load_pickle(cache_file)
 
@@ -81,14 +71,8 @@ class Argoverse2SceneFlow():
             ego_to_world: SE3 = entry["relative_pose"]
             point_cloud_frame = PointCloudFrame(
                 pc, PoseInfo(lidar_to_ego, ego_to_world))
-
-            rgb_to_ego: SE3 = entry["rgb_camera_ego_pose"]
-            rgb_camera_projection: CameraProjection = entry[
-                "rgb_camera_projection"]
-            rgb_frame = RGBFrame(entry["rgb"],
-                                 PoseInfo(rgb_to_ego, ego_to_world),
-                                 rgb_camera_projection)
-            percept_lookup[dataset_idx] = RawSceneItem(pc_frame=point_cloud_frame, rgb_frame=rgb_frame)
+            percept_lookup[dataset_idx] = RawSceneItem(
+                pc_frame=point_cloud_frame, rgb_frame=None)
 
         return RawSceneSequence(percept_lookup)
 
@@ -103,13 +87,10 @@ class Argoverse2SceneFlow():
         source_entry = subsequence_frames[subsequence_src_index]
 
         pc_points_array = source_entry[self.relative_pc_key].points
-        in_range_points_array = source_entry[self.in_range_mask_key]
 
         query_particles = QueryParticleLookup(len(pc_points_array),
                                               subsequence_src_index)
         particle_ids = np.arange(len(pc_points_array))
-        query_particles[particle_ids[in_range_points_array]] = pc_points_array[
-            in_range_points_array]
         return QuerySceneSequence(scene_sequence, query_particles,
                                   query_timestamps)
 
@@ -125,7 +106,6 @@ class Argoverse2SceneFlow():
         source_entry = subsequence_frames[subsequence_src_index]
         source_pc = source_entry[self.relative_pc_key].points
         target_pc = source_entry[self.relative_pc_flowed_key].points
-        in_range_points_array = source_entry[self.in_range_mask_key]
         pc_class_ids = source_entry[self.pc_classes_key]
         assert len(source_pc) == len(
             target_pc), "Source and target point clouds must be the same size."
@@ -138,8 +118,7 @@ class Argoverse2SceneFlow():
         particle_trajectories = GroundTruthParticleTrajectories(
             len(source_pc),
             np.array([subsequence_src_index, subsequence_tgt_index]),
-            query.query_particles.query_init_timestamp, 
-            CATEGORY_MAP)
+            query.query_particles.query_init_timestamp, CATEGORY_MAP)
 
         points = np.stack([source_pc, target_pc], axis=1)
         # Stack the false false array len(source_pc) times.
@@ -148,10 +127,8 @@ class Argoverse2SceneFlow():
         particle_ids = np.arange(len(source_pc))
         is_valids = np.ones((len(source_pc), 2), dtype=bool)
 
-        particle_trajectories[particle_ids[in_range_points_array]] = (
-            points[in_range_points_array], is_occluded[in_range_points_array],
-            pc_class_ids[in_range_points_array],
-            is_valids[in_range_points_array])
+        particle_trajectories[particle_ids] = (points, is_occluded,
+                                               pc_class_ids, is_valids)
         # for point_idx, (source_point, target_point, pc_class_id) in enumerate(
         #         zip(source_pc, target_pc, pc_class_ids)):
         #     key, value = _build_result_entry(
