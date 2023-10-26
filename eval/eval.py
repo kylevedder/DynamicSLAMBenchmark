@@ -109,6 +109,9 @@ class Evaluator():
         return evaluator
 
     def __add__(self, other: 'Evaluator'):
+        if isinstance(other, int):
+            if other == 0:
+                return self
         return Evaluator.from_evaluator_list([self, other])
 
     def __len__(self):

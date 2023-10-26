@@ -322,6 +322,15 @@ class GroundTruthParticleTrajectories():
 
     def __len__(self) -> int:
         return self.num_entries
+    
+    def _mask_entries(self, mask : np.ndarray):
+        assert mask.ndim == 1, \
+            f"mask must be a 1D array, got {mask.ndim}"
+        
+        assert len(mask) == self.num_entries, \
+            f"mask must be the same length as the number of entries, got {len(mask)} and {self.num_entries} instead"
+        
+        self.is_valid[~mask] = False
 
     def __setitem__(self, particle_id: ParticleID,
                     data_tuple: Tuple[NDArray, NDArray, ParticleClassId,

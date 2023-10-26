@@ -44,9 +44,12 @@ CATEGORY_MAP = {
 
 class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
 
-    def __init__(self, log_id: str, dataset_dir: Path,
-                 flow_data_lst: List[Tuple[int, Path]]):
-        super().__init__(log_id, dataset_dir)
+    def __init__(self,
+                 log_id: str,
+                 dataset_dir: Path,
+                 flow_data_lst: List[Tuple[int, Path]],
+                 with_rgb: bool = True):
+        super().__init__(log_id, dataset_dir, with_rgb=with_rgb)
 
         # Each flow contains info for the t and t+1 timestamps. This means the last pointcloud in the sequence
         # will not have a corresponding flow.
@@ -87,8 +90,12 @@ class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
         assert idx < len(
             self
         ), f'idx {idx} out of range, len {len(self)} for {self.dataset_dir}'
+        timestamp = self.timestamp_list[idx]
         ego_pc = self._load_pc(idx)
-        img = self._load_rgb(idx)
+        if self.with_rgb:
+            img = self._load_rgb(idx)
+        else:
+            img = None
         flow_0_1, classes_0, _, is_ground0, _, _ = self._load_flow(idx)
         start_pose = self._load_pose(relative_to_idx)
         idx_pose = self._load_pose(idx)
@@ -150,6 +157,7 @@ class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
             "pc_is_ground": is_ground0,
             "log_id": self.log_id,
             "log_idx": idx,
+            "log_timestamp": timestamp,
         }
 
 
@@ -157,6 +165,7 @@ class ArgoverseSupervisedSceneFlowSequenceLoader():
 
     def __init__(self,
                  raw_data_path: Path,
+                 with_rgb: bool = True,
                  flow_data_path: Optional[Path] = None,
                  log_subset: Optional[List[str]] = None,
                  num_sequences: Optional[int] = None):
@@ -164,6 +173,8 @@ class ArgoverseSupervisedSceneFlowSequenceLoader():
         self.raw_data_path = Path(raw_data_path)
         assert self.raw_data_path.is_dir(
         ), f'raw_data_path {raw_data_path} does not exist'
+
+        self.with_rgb = with_rgb
 
         self.flow_data_path = flow_data_path
         if self.flow_data_path is None:
@@ -213,12 +224,17 @@ class ArgoverseSupervisedSceneFlowSequenceLoader():
     def get_sequence_ids(self):
         return self.sequence_id_lst
 
+    def _sequence_id_to_idx(self, sequence_id: str):
+        return self.sequence_id_lst.index(sequence_id)
+
     def _load_sequence_uncached(
             self, sequence_id: str) -> ArgoverseSupervisedSceneFlowSequence:
         assert sequence_id in self.sequence_id_to_flow_lst, f'sequence_id {sequence_id} does not exist'
         return ArgoverseSupervisedSceneFlowSequence(
-            sequence_id, self.sequence_id_to_raw_data[sequence_id],
-            self.sequence_id_to_flow_lst[sequence_id])
+            sequence_id,
+            self.sequence_id_to_raw_data[sequence_id],
+            self.sequence_id_to_flow_lst[sequence_id],
+            with_rgb=self.with_rgb)
 
     def load_sequence(
             self, sequence_id: str) -> ArgoverseSupervisedSceneFlowSequence:

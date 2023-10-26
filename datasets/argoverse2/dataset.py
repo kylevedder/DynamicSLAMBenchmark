@@ -23,10 +23,11 @@ class Argoverse2SceneFlow():
         root_dir: Path,
         subsequence_length: int = 2,
         with_ground: bool = True,
+        with_rgb: bool = True,
         cache_path: Path = Path("/tmp/")) -> None:
         self.root_dir = Path(root_dir)
         self.sequence_loader = ArgoverseSupervisedSceneFlowSequenceLoader(
-            root_dir)
+            root_dir, with_rgb=with_rgb)
         self.subsequence_length = subsequence_length
         self.cache_path = cache_path
         if with_ground:
@@ -44,11 +45,19 @@ class Argoverse2SceneFlow():
             self.pc_classes_key = "pc_classes"
             self.in_range_mask_key = "in_range_mask"
 
+        self.with_rgb = with_rgb
+
         self.dataset_to_sequence_subsequence_idx = self._load_dataset_to_sequence_subsequence_idx(
         )
+        self.sequence_subsequence_idx_to_dataset_idx = {
+            value: key
+            for key, value in enumerate(
+                self.dataset_to_sequence_subsequence_idx)
+        }
 
-    def _load_dataset_to_sequence_subsequence_idx(self):
-        cache_file = self.cache_path / "argo" / self.root_dir.parent.name / self.root_dir.name /  f"dataset_to_sequence_subsequence_idx_cache_len_{self.subsequence_length}.pkl"
+    def _load_dataset_to_sequence_subsequence_idx(
+            self) -> List[Tuple[int, int]]:
+        cache_file = self.cache_path / "argo" / self.root_dir.parent.name / self.root_dir.name / f"dataset_to_sequence_subsequence_idx_cache_len_{self.subsequence_length}.pkl"
         if cache_file.exists():
             return load_pickle(cache_file)
 
@@ -70,6 +79,16 @@ class Argoverse2SceneFlow():
     def __len__(self):
         return len(self.dataset_to_sequence_subsequence_idx)
 
+    def _av2_sequence_id_and_timestamp_to_idx(self, av2_sequence_id: str,
+                                              timestamp: int) -> int:
+
+        sequence_loader_idx = self.sequence_loader._sequence_id_to_idx(
+            av2_sequence_id)
+        sequence = self.sequence_loader.load_sequence(av2_sequence_id)
+        sequence_idx = sequence._timestamp_to_idx(timestamp)
+        return self.sequence_subsequence_idx_to_dataset_idx[(
+            sequence_loader_idx, sequence_idx)]
+
     def _make_scene_sequence(
             self, subsequence_frames: List[Dict]) -> RawSceneSequence:
         # Build percept lookup. This stores the percepts for the entire sequence, with the
@@ -85,10 +104,14 @@ class Argoverse2SceneFlow():
             rgb_to_ego: SE3 = entry["rgb_camera_ego_pose"]
             rgb_camera_projection: CameraProjection = entry[
                 "rgb_camera_projection"]
-            rgb_frame = RGBFrame(entry["rgb"],
-                                 PoseInfo(rgb_to_ego, ego_to_world),
-                                 rgb_camera_projection)
-            percept_lookup[dataset_idx] = RawSceneItem(pc_frame=point_cloud_frame, rgb_frame=rgb_frame)
+            if self.with_rgb:
+                rgb_frame = RGBFrame(entry["rgb"],
+                                     PoseInfo(rgb_to_ego, ego_to_world),
+                                     rgb_camera_projection)
+            else:
+                rgb_frame = None
+            percept_lookup[dataset_idx] = RawSceneItem(
+                pc_frame=point_cloud_frame, rgb_frame=rgb_frame)
 
         return RawSceneSequence(percept_lookup)
 
@@ -138,8 +161,7 @@ class Argoverse2SceneFlow():
         particle_trajectories = GroundTruthParticleTrajectories(
             len(source_pc),
             np.array([subsequence_src_index, subsequence_tgt_index]),
-            query.query_particles.query_init_timestamp, 
-            CATEGORY_MAP)
+            query.query_particles.query_init_timestamp, CATEGORY_MAP)
 
         points = np.stack([source_pc, target_pc], axis=1)
         # Stack the false false array len(source_pc) times.

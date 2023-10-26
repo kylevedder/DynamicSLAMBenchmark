@@ -24,6 +24,7 @@ class ArgoverseRawSequence():
                  log_id: str,
                  dataset_dir: Path,
                  verbose: bool = False,
+                 with_rgb : bool = True,
                  POINT_CLOUD_RANGE=(-48, -48, -2.5, 48, 48, 2.5),
                  sample_every: Optional[int] = None):
         self.log_id = log_id
@@ -94,6 +95,8 @@ class ArgoverseRawSequence():
             print(
                 f'Loaded {len(self.timestamp_list)} frames from {self.dataset_dir} at timestamp {time.time():.3f}'
             )
+
+        self.with_rgb = with_rgb
 
     def _quat_to_mat(self, qw, qx, qy, qz):
         """Convert a quaternion to a 3D rotation matrix.
@@ -231,6 +234,9 @@ class ArgoverseRawSequence():
 
     def __len__(self):
         return len(self.timestamp_list)
+    
+    def _timestamp_to_idx(self, timestamp: int) -> int:
+        return self.timestamp_list.index(timestamp)
 
     def _load_pc(self, idx) -> PointCloud:
         assert idx < len(
@@ -274,8 +280,12 @@ class ArgoverseRawSequence():
         assert idx < len(
             self
         ), f'idx {idx} out of range, len {len(self)} for {self.dataset_dir}'
+        timestamp = self.timestamp_list[idx]
         ego_pc = self._load_pc(idx)
-        img = self._load_rgb(idx)
+        if self.with_rgb:
+            img = self._load_rgb(idx)
+        else:
+            img = None
         start_pose = self._load_pose(relative_to_idx)
         idx_pose = self._load_pose(idx)
         relative_pose = start_pose.inverse().compose(idx_pose)
@@ -303,6 +313,7 @@ class ArgoverseRawSequence():
             "rgb_camera_ego_pose": self.rgb_camera_ego_pose,
             "log_id": self.log_id,
             "log_idx": idx,
+            "log_timestamp" : timestamp,
         }
 
     def load_frame_list(

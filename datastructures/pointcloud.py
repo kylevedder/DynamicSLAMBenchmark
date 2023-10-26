@@ -124,6 +124,18 @@ class PointCloud():
     def flow(self, flow: np.ndarray) -> 'PointCloud':
         assert flow.shape == self.points.shape, f"flow shape {flow.shape} must match point cloud shape {self.points.shape}"
         return PointCloud(self.points + flow)
+    
+    def flow_masked(self, flow : np.ndarray, mask : np.ndarray) -> 'PointCloud':
+        assert mask.ndim == 1, f"mask must be 1D, got {mask.ndim}"
+        assert mask.dtype == bool, f"mask must be boolean, got {mask.dtype}"
+        assert self.points.shape[0] == mask.shape[0], f"mask must have same length as point cloud, got {mask.shape[0]} and {self.points.shape[0]}"
+        # check that flow has the same number of entries as the boolean mask.
+        assert flow.shape[0] == mask.sum(), f"flow must have same number of entries as the number of True values in the mask, got {flow.shape[0]} and {mask.sum()}"
+        flow = flow.astype(np.float32)
+        updated_points = self.points.copy()
+        updated_points[mask] = self.points[mask] + flow
+        return PointCloud(updated_points)
+
 
     def to_fixed_array(self, max_points: int) -> np.ndarray:
         return to_fixed_array(self.points, max_points)
