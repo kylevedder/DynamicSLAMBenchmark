@@ -3,7 +3,6 @@ import open3d as o3d
 from scene_trajectory_benchmark.datastructures import SE3, CameraProjection
 
 
-
 def to_fixed_array(array: np.ndarray,
                    max_len: int,
                    pad_val=np.nan) -> np.ndarray:
@@ -64,7 +63,6 @@ def camera_to_world_coordiantes(points: np.ndarray) -> np.ndarray:
 
 
 class PointCloud():
-
     def __init__(self, points: np.ndarray) -> None:
         assert points.ndim == 2, f'points must be a 2D array, got {points.ndim}'
         assert points.shape[
@@ -106,9 +104,10 @@ class PointCloud():
                                         image_coordinate_depths))
 
     def transform(self, se3: SE3) -> 'PointCloud':
-        assert isinstance(se3, SE3), f'se3 must be an SE3, got {type(se3)}, expected {SE3}'
+        assert isinstance(
+            se3, SE3), f'se3 must be an SE3, got {type(se3)}, expected {SE3}'
         return PointCloud(se3.transform_points(self.points))
-    
+
     def transform_masked(self, se3: SE3, mask: np.ndarray) -> 'PointCloud':
         assert isinstance(se3, SE3)
         assert mask.ndim == 1
@@ -124,18 +123,19 @@ class PointCloud():
     def flow(self, flow: np.ndarray) -> 'PointCloud':
         assert flow.shape == self.points.shape, f"flow shape {flow.shape} must match point cloud shape {self.points.shape}"
         return PointCloud(self.points + flow)
-    
-    def flow_masked(self, flow : np.ndarray, mask : np.ndarray) -> 'PointCloud':
+
+    def flow_masked(self, flow: np.ndarray, mask: np.ndarray) -> 'PointCloud':
         assert mask.ndim == 1, f"mask must be 1D, got {mask.ndim}"
         assert mask.dtype == bool, f"mask must be boolean, got {mask.dtype}"
-        assert self.points.shape[0] == mask.shape[0], f"mask must have same length as point cloud, got {mask.shape[0]} and {self.points.shape[0]}"
+        assert self.points.shape[0] == mask.shape[
+            0], f"mask must have same length as point cloud, got {mask.shape[0]} and {self.points.shape[0]}"
         # check that flow has the same number of entries as the boolean mask.
-        assert flow.shape[0] == mask.sum(), f"flow must have same number of entries as the number of True values in the mask, got {flow.shape[0]} and {mask.sum()}"
+        assert flow.shape[0] == mask.sum(
+        ), f"flow must have same number of entries as the number of True values in the mask, got {flow.shape[0]} and {mask.sum()}"
         flow = flow.astype(np.float32)
         updated_points = self.points.copy()
         updated_points[mask] = self.points[mask] + flow
         return PointCloud(updated_points)
-
 
     def to_fixed_array(self, max_points: int) -> np.ndarray:
         return to_fixed_array(self.points, max_points)

@@ -17,7 +17,7 @@ print(f"Dataset {args.dataset} constructed successfully!")
 print(f"Number of scenes: {len(dataset)}")
 
 visualize_settings = dict()
-if args.dataset in  {"flyingthings3d"}:
+if args.dataset in {"flyingthings3d"}:
     visualize_settings = dict(verbose=False, percent_subsample=0.01)
 
 for idx, (query, result) in enumerate(dataset):

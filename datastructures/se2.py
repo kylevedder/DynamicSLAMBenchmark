@@ -2,7 +2,6 @@ import numpy as np
 
 
 class SE2:
-
     def __init__(self, rotation: np.ndarray, translation: np.ndarray) -> None:
         """Initialize.
         Args:

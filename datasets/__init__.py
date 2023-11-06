@@ -6,7 +6,10 @@ from scene_trajectory_benchmark.datasets.pointodyssey.dataset import PointOdysse
 from scene_trajectory_benchmark.datasets.argoverse2 import Argoverse2SceneFlow
 from scene_trajectory_benchmark.datasets.waymoopen import WaymoOpenSceneFlow
 
-__all__ = ["Kubric", "FlyingThings3D", "PointOdyssey", "Argoverse2SceneFlow", "WaymoOpenSceneFlow"]
+__all__ = [
+    "Kubric", "FlyingThings3D", "PointOdyssey", "Argoverse2SceneFlow",
+    "WaymoOpenSceneFlow"
+]
 dataset_names = [cls.lower() for cls in __all__]
 
 

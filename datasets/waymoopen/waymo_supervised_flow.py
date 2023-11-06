@@ -16,7 +16,6 @@ CATEGORY_MAP = {
 
 
 class WaymoSupervisedFlowSequence():
-
     def __init__(self, sequence_folder: Path, verbose: bool = False):
         self.sequence_folder = Path(sequence_folder)
         self.sequence_files = sorted(self.sequence_folder.glob('*.pkl'))
@@ -91,7 +90,6 @@ class WaymoSupervisedFlowSequence():
 
 
 class WaymoSupervisedFlowSequenceLoader():
-
     def __init__(self,
                  sequence_dir: Path,
                  log_subset: Optional[List[str]] = None,

@@ -17,7 +17,6 @@ class WaymoOpenSceneFlow():
 
     It provides iterable access over all problems in the dataset.
     """
-
     def __init__(
         self,
         root_dir: Path,

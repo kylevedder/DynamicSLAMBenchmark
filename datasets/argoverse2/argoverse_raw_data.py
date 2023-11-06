@@ -19,12 +19,11 @@ class ArgoverseRawSequence():
     synced with the lidar frames, so we have to pull the most recent RGB image as a first order 
     approximation of the RGB at the given timestamp.
     """
-
     def __init__(self,
                  log_id: str,
                  dataset_dir: Path,
                  verbose: bool = False,
-                 with_rgb : bool = True,
+                 with_rgb: bool = True,
                  POINT_CLOUD_RANGE=(-48, -48, -2.5, 48, 48, 2.5),
                  sample_every: Optional[int] = None):
         self.log_id = log_id
@@ -234,7 +233,7 @@ class ArgoverseRawSequence():
 
     def __len__(self):
         return len(self.timestamp_list)
-    
+
     def _timestamp_to_idx(self, timestamp: int) -> int:
         return self.timestamp_list.index(timestamp)
 
@@ -296,8 +295,10 @@ class ArgoverseRawSequence():
             ~is_ground_points)
         ego_pc_no_ground = ego_pc.mask_points(~is_ground_points)
 
-        in_range_mask_with_ground = self.is_in_range(relative_global_frame_pc_with_ground)
-        in_range_mask_no_ground = self.is_in_range(relative_global_frame_pc_no_ground)
+        in_range_mask_with_ground = self.is_in_range(
+            relative_global_frame_pc_with_ground)
+        in_range_mask_no_ground = self.is_in_range(
+            relative_global_frame_pc_no_ground)
 
         return {
             "ego_pc": ego_pc_no_ground,
@@ -313,7 +314,7 @@ class ArgoverseRawSequence():
             "rgb_camera_ego_pose": self.rgb_camera_ego_pose,
             "log_id": self.log_id,
             "log_idx": idx,
-            "log_timestamp" : timestamp,
+            "log_timestamp": timestamp,
         }
 
     def load_frame_list(
@@ -327,7 +328,6 @@ class ArgoverseRawSequence():
 
 
 class ArgoverseRawSequenceLoader():
-
     def __init__(self,
                  sequence_dir: Path,
                  log_subset: Optional[List[str]] = None,

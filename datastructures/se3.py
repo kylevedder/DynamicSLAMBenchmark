@@ -4,7 +4,6 @@ from pyquaternion import Quaternion
 
 class SE3:
     """An SE3 class allows point cloud rotation and translation operations."""
-
     def __init__(self, rotation_matrix: np.ndarray,
                  translation: np.ndarray) -> None:
         """Initialize an SE3 instance with its rotation and translation matrices.

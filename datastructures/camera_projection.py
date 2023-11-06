@@ -15,7 +15,6 @@ class CameraProjection():
     - View Space (positive X down, positive Y right, positive Z forward)
     - Camera Space (Right Hand Rule, positive X forward, positive Y left, positive Z up)
     """
-
     def __init__(self, fx: float, fy: float, cx: float, cy: float,
                  camera_model: CameraModel):
         self.fx = fx

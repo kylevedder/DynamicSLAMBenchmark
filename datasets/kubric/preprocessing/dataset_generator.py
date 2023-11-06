@@ -35,7 +35,7 @@ def project_point(cam, point3d, num_frames):
     point4d = tf.concat([point3d, tf.ones_like(point3d[:, :, 0:1])], axis=2)
     projected_local = tf.matmul(point4d, tf.transpose(homo_transform,
                                                       (0, 2, 1)))
-    
+
     projected = tf.matmul(projected_local,
                           tf.transpose(homo_intrinsics, (0, 2, 1)))
     image_coords = projected / projected[:, :, 2:3]
@@ -703,8 +703,8 @@ def track_points(
 
         all_points_3d.append(obj_points_3d)
         all_reproj.append(obj_reproj)
-        all_points_object_ids.append(tf.ones([tf.shape(obj_reproj)[0]],
-                                              dtype=tf.int32) * i)
+        all_points_object_ids.append(
+            tf.ones([tf.shape(obj_reproj)[0]], dtype=tf.int32) * i)
         all_occ.append(obj_occ)
 
     # Points are currently in pixel coordinates of the original video.  We now
@@ -742,7 +742,8 @@ def track_points(
 
     return tf.cast(chosen_points,
                    tf.float32), tf.cast(all_points_3d, tf.float32), tf.cast(
-                       all_reproj, tf.float32), all_points_object_ids, all_occ, depth_map
+                       all_reproj,
+                       tf.float32), all_points_object_ids, all_occ, depth_map
 
 
 def _get_distorted_bounding_box(

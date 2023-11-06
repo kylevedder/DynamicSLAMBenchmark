@@ -7,7 +7,6 @@ from typing import Dict, Tuple, List
 
 
 class KubricSequence():
-
     def __init__(self, data_file: Path):
         self.data = self._load_pkl(data_file)
         self.right_hand_T_blender = np.array([
@@ -145,11 +144,11 @@ class KubricSequence():
     def to_result_scene_sequence(self) -> GroundTruthParticleTrajectories:
         raw_scene_sequence = self.to_raw_scene_sequence()
         particle_trajectories = self._get_particle_trajectories()
-        return GroundTruthParticleTrajectories(raw_scene_sequence, particle_trajectories)
+        return GroundTruthParticleTrajectories(raw_scene_sequence,
+                                               particle_trajectories)
 
 
 class KubricSequenceLoader():
-
     def __init__(self, root_dir: Path) -> None:
         self.files = sorted(root_dir.glob("*.pkl"))
         assert len(
@@ -169,7 +168,6 @@ class Kubric():
 
     It provides iterable access over all problems in the dataset.
     """
-
     def __init__(self, root_dir: Path) -> None:
         self.root_dir = root_dir
         self.sequence_loader = KubricSequenceLoader(root_dir)
@@ -177,8 +175,9 @@ class Kubric():
     def __len__(self):
         return len(self.sequence_loader)
 
-    def __getitem__(self,
-                    idx) -> Tuple[QuerySceneSequence, GroundTruthParticleTrajectories]:
+    def __getitem__(
+            self,
+            idx) -> Tuple[QuerySceneSequence, GroundTruthParticleTrajectories]:
 
         sequence = self.sequence_loader[idx]
 
@@ -186,7 +185,7 @@ class Kubric():
         results_scene_sequence = sequence.to_result_scene_sequence()
 
         return query_scene_sequence, results_scene_sequence
-    
+
     def evaluator(self) -> Evaluator:
         # Builds the evaluator object for this dataset.
         return Evaluator(self)

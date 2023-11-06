@@ -63,7 +63,6 @@ class FlyingThingsSequence:
                         ├── 0007.png
                         └── 0008.png
     """
-
     def __init__(self, root_dir: Path, split_subdir_names: str):
         root_dir = Path(root_dir)
         self.root_dir = root_dir
@@ -321,8 +320,8 @@ class FlyingThingsSequence:
         return QuerySceneSequence(raw_scene_sequence, query_particles,
                                   query_timestamps)
 
-    def to_result_scene_sequence(self,
-                                 timestamp: Timestamp) -> GroundTruthParticleTrajectories:
+    def to_result_scene_sequence(
+            self, timestamp: Timestamp) -> GroundTruthParticleTrajectories:
         assert timestamp < len(
             self), f"idx out of bounds, {timestamp} >= {len(self)}"
         raw_scene_sequence = self.to_raw_scene_sequence()
@@ -347,11 +346,11 @@ class FlyingThingsSequence:
             particle_trajectories[particle_id] = ParticleTrajectory(
                 particle_id, particle_lookup, cls)
 
-        return GroundTruthParticleTrajectories(raw_scene_sequence, particle_trajectories)
+        return GroundTruthParticleTrajectories(raw_scene_sequence,
+                                               particle_trajectories)
 
 
 class FlyingThings3D():
-
     def __init__(self, root_dir: Path, split: str = "TRAIN"):
         root_dir = Path(root_dir)
         self.root_dir = root_dir
@@ -376,8 +375,9 @@ class FlyingThings3D():
     def __len__(self) -> int:
         return sum(self.subdir_lengths)
 
-    def __getitem__(self,
-                    idx) -> Tuple[QuerySceneSequence, GroundTruthParticleTrajectories]:
+    def __getitem__(
+            self,
+            idx) -> Tuple[QuerySceneSequence, GroundTruthParticleTrajectories]:
         assert idx < len(self), f"idx out of bounds, {idx} >= {len(self)}"
 
         # Find the sequence that contains the idx

@@ -8,7 +8,14 @@ import time
 import numpy as np
 
 from .argoverse_supervised_scene_flow import ArgoverseSupervisedSceneFlowSequenceLoader, ArgoverseSupervisedSceneFlowSequence, CATEGORY_MAP
-from scene_trajectory_benchmark.eval import Evaluator
+from scene_trajectory_benchmark.eval import Evaluator, PerClassRawEPEEvaluator, PerClassScaledEPEEvaluator, PerClassThreewayEPEEvaluator
+import enum
+
+
+class EvalType(enum.Enum):
+    RAW_EPE = 0
+    SCALED_EPE = 1
+    CLASS_THREEWAY_EPE = 2
 
 
 class Argoverse2SceneFlow():
@@ -18,13 +25,14 @@ class Argoverse2SceneFlow():
     It provides iterable access over all problems in the dataset.
     """
 
-    def __init__(
-        self,
-        root_dir: Path,
-        subsequence_length: int = 2,
-        with_ground: bool = True,
-        with_rgb: bool = True,
-        cache_path: Path = Path("/tmp/")) -> None:
+    def __init__(self,
+                 root_dir: Path,
+                 subsequence_length: int = 2,
+                 with_ground: bool = True,
+                 with_rgb: bool = True,
+                 cache_path: Path = Path("/tmp/"),
+                 eval_type: str = "scaled_epe",
+                 eval_args=dict()) -> None:
         self.root_dir = Path(root_dir)
         self.sequence_loader = ArgoverseSupervisedSceneFlowSequenceLoader(
             root_dir, with_rgb=with_rgb)
@@ -55,6 +63,9 @@ class Argoverse2SceneFlow():
                 self.dataset_to_sequence_subsequence_idx)
         }
 
+        self.eval_type = EvalType[eval_type.strip().upper()]
+        self.eval_args = eval_args
+
     def _load_dataset_to_sequence_subsequence_idx(
             self) -> List[Tuple[int, int]]:
         cache_file = self.cache_path / "argo" / self.root_dir.parent.name / self.root_dir.name / f"dataset_to_sequence_subsequence_idx_cache_len_{self.subsequence_length}.pkl"
@@ -77,7 +88,7 @@ class Argoverse2SceneFlow():
         return dataset_to_sequence_subsequence_idx
 
     def __len__(self):
-        return len(self.dataset_to_sequence_subsequence_idx)
+        return 100  #len(self.dataset_to_sequence_subsequence_idx)
 
     def _av2_sequence_id_and_timestamp_to_idx(self, av2_sequence_id: str,
                                               timestamp: int) -> int:
@@ -247,4 +258,11 @@ class Argoverse2SceneFlow():
 
     def evaluator(self) -> Evaluator:
         # Builds the evaluator object for this dataset.
-        return Evaluator()
+        if self.eval_type == EvalType.RAW_EPE:
+            return PerClassRawEPEEvaluator(**self.eval_args)
+        elif self.eval_type == EvalType.SCALED_EPE:
+            return PerClassScaledEPEEvaluator(**self.eval_args)
+        elif self.eval_type == EvalType.CLASS_THREEWAY_EPE:
+            return PerClassThreewayEPEEvaluator(**self.eval_args)
+        else:
+            raise ValueError(f"Unknown eval type {self.eval_type}")

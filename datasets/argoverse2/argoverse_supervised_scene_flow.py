@@ -43,7 +43,6 @@ CATEGORY_MAP = {
 
 
 class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
-
     def __init__(self,
                  log_id: str,
                  dataset_dir: Path,
@@ -162,7 +161,6 @@ class ArgoverseSupervisedSceneFlowSequence(ArgoverseRawSequence):
 
 
 class ArgoverseSupervisedSceneFlowSequenceLoader():
-
     def __init__(self,
                  raw_data_path: Path,
                  with_rgb: bool = True,

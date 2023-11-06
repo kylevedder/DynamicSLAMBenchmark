@@ -66,7 +66,9 @@ def create_lineset_from_array(
     """
     # Ensure the input is an Nx2x3 array
     assert array.ndim == 3 and array.shape[1:] == (
-        2, 3), "Array must be of shape Nx2x3."
+        2,
+        3,
+    ), "Array must be of shape Nx2x3."
 
     num_lines = array.shape[0]
 
@@ -116,13 +118,16 @@ def setup_and_show_visualizer(geometries: list):
     vis.destroy_window()
 
 
-def generate_samples(num_samples: int, gt_magnitude : float, error_magnitude : float):
+def generate_samples(num_samples: int, gt_magnitude: float,
+                     error_magnitude: float):
     # set random seed
     np.random.seed(0)
 
     # Sample unit vectors
     gt_vectors = sample_unit_vectors(num_samples, magnitude=gt_magnitude)
-    est_vectors = sample_unit_vectors(num_samples, magnitude=error_magnitude) + gt_vectors
+    est_vectors = (
+        sample_unit_vectors(num_samples, magnitude=error_magnitude) +
+        gt_vectors)
     origin_points = np.zeros((num_samples, 3))
 
     return gt_vectors, est_vectors, origin_points
@@ -135,7 +140,7 @@ def visualize_samples(gt_vectors, est_vectors, origin_points):
         [gt_vectors, est_vectors], axis=1),
                                               color=(1, 0, 0))
 
-    origin_sphere = None  #create_sphere_at_point([0, 0, 0], radius=0.1)
+    origin_sphere = None  # create_sphere_at_point([0, 0, 0], radius=0.1)
 
     # Convert these vectors to Open3D point cloud
     point_cloud = o3d.geometry.PointCloud()
@@ -146,7 +151,7 @@ def visualize_samples(gt_vectors, est_vectors, origin_points):
         [point_cloud, origin_lineset, error_lineset, origin_sphere])
 
 
-def compute_error(pc1, pc2_gt, pc2_est, verbose: bool = False):
+def compute_error_4d(pc1, pc2_gt, pc2_est, verbose: bool = False):
     """
     Computes the error between two point clouds.
 
@@ -159,7 +164,8 @@ def compute_error(pc1, pc2_gt, pc2_est, verbose: bool = False):
     - float: The error between the two point clouds.
     """
     # Ensure the point clouds have the same shape
-    assert pc1.shape == pc2_gt.shape == pc2_est.shape, "Point clouds must have the same shape."
+    assert (pc1.shape == pc2_gt.shape ==
+            pc2_est.shape), "Point clouds must have the same shape."
 
     def augment_flow(flow):
         """
@@ -206,6 +212,64 @@ def compute_error(pc1, pc2_gt, pc2_est, verbose: bool = False):
     return error.mean()
 
 
+def compute_error_plus_1(pc1, pc2_gt, pc2_est, verbose: bool = False):
+    """
+    Computes the error between two point clouds.
+
+    Args:
+    - pc1 (np.ndarray): An Nx3 numpy array representing a point cloud.
+    - pc2_gt (np.ndarray): An Nx3 numpy array representing a point cloud.
+    - pc2_est (np.ndarray): An Nx3 numpy array representing a point cloud.
+
+    Returns:
+    - float: The error between the two point clouds.
+    """
+    # Ensure the point clouds have the same shape
+    assert (pc1.shape == pc2_gt.shape ==
+            pc2_est.shape), "Point clouds must have the same shape."
+
+    raw_gt_flow = pc2_gt - pc1
+    raw_est_flow = pc2_est - pc1
+
+    # Compute the norms of gt_flow_aug
+    gt_norms = np.linalg.norm(raw_gt_flow, axis=1) + 1
+
+    # Normalize gt_flow and est_flow by the gt_norm
+    normed_gt_flow = raw_gt_flow / gt_norms[:, np.newaxis]
+    normed_est_flow = raw_est_flow / gt_norms[:, np.newaxis]
+
+    if verbose:
+        print("raw_gt_flow", raw_gt_flow)
+        print("raw_est_flow", raw_est_flow)
+
+        print("gt_norms", gt_norms)
+
+        print("normed_gt_flow", normed_gt_flow)
+        print("normed_est_flow", normed_est_flow)
+
+    # Compute the EPE between the two flows, now that they are normalized
+    error = np.linalg.norm(normed_gt_flow - normed_est_flow, axis=1)
+    return error.mean()
+
+
+num_rand_vectors = 100
+np.random.seed(0)
+unit_vectors = sample_unit_vectors(num_rand_vectors)
+rand_magnitudes = np.linspace(0, 10, num_rand_vectors) # np.random.rand(num_rand_vectors) * 10
+scaled_vectors = unit_vectors * rand_magnitudes[:, np.newaxis]
+
+def additive_norm(vector, additive_value : float):
+    return np.sqrt(np.sum(vector**2) + additive_value**2)
+
+epsilon_size = [additive_norm(vector, 1) - additive_norm(vector, 0) for vector in scaled_vectors]
+
+plt.scatter(rand_magnitudes, epsilon_size)
+plt.ylabel("Additive size")
+# set y lim to start at 0
+plt.ylim(bottom=0)
+plt.xlabel("Ground truth vector distance")
+plt.show()
+
 num_samples = 100
 
 gt_magnitudes = [0, 0.001, 0.05, 0.2, 0.5, 1, 2, 5, 10]
@@ -213,24 +277,41 @@ est_magnitudes = [0.1, 0.2, 0.5, 1, 2, 5]
 
 color_map = plt.get_cmap("tab10")
 
-errors = dict()
-
+errors_4d = dict()
+errors_plus_1 = dict()
 
 for est_magnitude in est_magnitudes:
     for gt_magnitude in gt_magnitudes:
         gt_vectors, est_vectors, origin_points = generate_samples(
             num_samples, gt_magnitude, est_magnitude)
-        errors[(gt_magnitude, est_magnitude)] = compute_error(origin_points, gt_vectors, est_vectors)
+        errors_4d[(gt_magnitude,
+                   est_magnitude)] = compute_error_4d(origin_points,
+                                                      gt_vectors, est_vectors)
+        errors_plus_1[(gt_magnitude, est_magnitude)] = compute_error_plus_1(
+            origin_points, gt_vectors, est_vectors)
         # visualize_samples(gt_vectors, est_vectors, origin_points)
 
-
 for idx, est_magnitude in enumerate(est_magnitudes):
-
     color = color_map(idx)
 
-    gt_errors = [errors[(gt_magnitude, est_magnitude)] for gt_magnitude in gt_magnitudes]
+    gt_errors_4d = [
+        errors_4d[(gt_magnitude, est_magnitude)]
+        for gt_magnitude in gt_magnitudes
+    ]
 
-    plt.plot(gt_magnitudes, gt_errors, label=f"Metric Space error = {est_magnitude}", color=color)
+    gt_errors_plus_1 = [
+        errors_plus_1[(gt_magnitude, est_magnitude)]
+        for gt_magnitude in gt_magnitudes
+    ]
+
+    plt.plot(
+        gt_magnitudes,
+        gt_errors_4d,
+        label=f"Metric Space error = {est_magnitude}",
+        color=color,
+    )
+
+    plt.plot(gt_magnitudes, gt_errors_plus_1, color=color, linestyle="--")
 
     # Draw a horizontal line at the est_magnitude
     plt.axhline(est_magnitude, linestyle="--", alpha=0.5, color=color)
@@ -240,7 +321,9 @@ plt.xlabel("Ground truth vector distance")
 # Set X ticks to be the same as the gt_magnitudes
 plt.xticks(gt_magnitudes)
 # Format the X ticks to be whole numbers if possible
-plt.gca().xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{int(x)}" if x.is_integer() else f"{x:.2f}"))
+plt.gca().xaxis.set_major_formatter(
+    plt.FuncFormatter(lambda x, _: f"{int(x)}"
+                      if x.is_integer() else f"{x:.2f}"))
 # Turn the X ticks vertical
 plt.xticks(rotation=90)
 
@@ -248,6 +331,5 @@ plt.ylabel("Space-Time Normalized EPE")
 
 # Light grid lines
 plt.grid(alpha=0.2)
-
 
 plt.show()

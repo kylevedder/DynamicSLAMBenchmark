@@ -10,7 +10,6 @@ from scipy.spatial.transform import Rotation as R
 
 
 class PointOdysseySequence():
-
     def __init__(self,
                  sequence_folder: Path,
                  min_idx: int = 0,
@@ -39,8 +38,7 @@ class PointOdysseySequence():
             [0, 0, 1],
         ])
 
-        # 
-        
+        #
 
         # np.array([
         #     [0, 0, 1],
@@ -128,8 +126,7 @@ class PointOdysseySequence():
         print(f"min_depth_image_val: {min_depth_image_val}")
         print(f"max_depth_image_val: {max_depth_image_val}")
         pointclouds = [
-            PointCloud.from_depth_image(depth_image / 16,
-                                        camera_projection)
+            PointCloud.from_depth_image(depth_image / 16, camera_projection)
             for depth_image in depth_images
         ]
         return pointclouds
@@ -275,11 +272,11 @@ class PointOdysseySequence():
     def to_result_scene_sequence(self) -> GroundTruthParticleTrajectories:
         raw_scene_sequence = self.to_raw_scene_sequence()
         particle_trajectories = self._get_particle_trajectories()
-        return GroundTruthParticleTrajectories(raw_scene_sequence, particle_trajectories)
+        return GroundTruthParticleTrajectories(raw_scene_sequence,
+                                               particle_trajectories)
 
 
 class PointOdysseySequenceLoader():
-
     def __init__(self, root_dir: Path, max_sequence_length: int = 50) -> None:
         self.max_sequence_length = max_sequence_length
         self.sequence_folders = sorted([
@@ -304,7 +301,6 @@ class PointOdyssey():
 
     It provides iterable access over all problems in the dataset.
     """
-
     def __init__(self, root_dir: Path) -> None:
         self.root_dir = root_dir
         self.sequence_loader = PointOdysseySequenceLoader(root_dir, )
@@ -312,8 +308,9 @@ class PointOdyssey():
     def __len__(self):
         return len(self.sequence_loader)
 
-    def __getitem__(self,
-                    idx) -> Tuple[QuerySceneSequence, GroundTruthParticleTrajectories]:
+    def __getitem__(
+            self,
+            idx) -> Tuple[QuerySceneSequence, GroundTruthParticleTrajectories]:
 
         sequence = self.sequence_loader[idx]
         print("To query scene sequence...")

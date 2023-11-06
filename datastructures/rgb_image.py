@@ -7,7 +7,6 @@ class RGBImage:
 
     Each pixel is assumed to be in the range [0, 1] as a float32.
     """
-
     def __init__(self, image: np.array):
         assert len(
             image.shape

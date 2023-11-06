@@ -100,7 +100,6 @@ class RawSceneSequence():
 
     Additionally, we store frame conversions for each percept.
     """
-
     def __init__(self, percept_lookup: Dict[Timestamp, RawSceneItem]):
         assert isinstance(percept_lookup, dict), \
             f"percept_lookup must be a dict, got {type(percept_lookup)}"
@@ -143,7 +142,6 @@ class QueryParticleLookup():
     """
     This class is an efficient lookup table for query particles.
     """
-
     def __init__(self, num_entries: int, query_init_timestamp: Timestamp):
         self.num_entries = num_entries
         self.query_init_world_particles = np.zeros((num_entries, 3),
@@ -183,7 +181,6 @@ class QuerySceneSequence:
     series of timestamps for which a point description is requested; motion is
     implied to be linear between these points at the requested timestamps.
     """
-
     def __init__(self, scene_sequence: RawSceneSequence,
                  query_particles: QueryParticleLookup,
                  query_trajectory_timestamps: List[Timestamp]):
@@ -248,7 +245,6 @@ class QuerySceneSequence:
 
 
 class EstimatedParticleTrajectories():
-
     def __init__(self, num_entries: int,
                  trajectory_timestamps: Union[List[Timestamp], np.ndarray]):
         self.num_entries = num_entries
@@ -291,7 +287,6 @@ class GroundTruthParticleTrajectories():
 
     It is designed to present like Dict[ParticleID, ParticleTrajectory] but backed by a numpy array.
     """
-
     def __init__(self,
                  num_entries: int,
                  trajectory_timestamps: Union[List[Timestamp], np.ndarray],
@@ -322,14 +317,14 @@ class GroundTruthParticleTrajectories():
 
     def __len__(self) -> int:
         return self.num_entries
-    
-    def _mask_entries(self, mask : np.ndarray):
+
+    def _mask_entries(self, mask: np.ndarray):
         assert mask.ndim == 1, \
             f"mask must be a 1D array, got {mask.ndim}"
-        
+
         assert len(mask) == self.num_entries, \
             f"mask must be the same length as the number of entries, got {len(mask)} and {self.num_entries} instead"
-        
+
         self.is_valid[~mask] = False
 
     def __setitem__(self, particle_id: ParticleID,
