@@ -32,7 +32,6 @@ class ScalingType(enum.Enum):
 
 
 class ScaledEvalFrameResult(BaseEvalFrameResult):
-
     def __init__(
         self,
         scaling_type: ScalingType,
@@ -85,7 +84,6 @@ class ScaledEvalFrameResult(BaseEvalFrameResult):
 
 
 class PerClassScaledEPEEvaluator(PerFrameSceneFlowEvaluator):
-
     def __init__(self,
                  scaling_type: str,
                  output_path: Path = Path("/tmp/frame_results/scaled_epe")):

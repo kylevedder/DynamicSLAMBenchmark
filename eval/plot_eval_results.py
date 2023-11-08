@@ -26,7 +26,7 @@ data_entries = [(e.name, load_data(e / "metric_table_35.json"))
 def data_index_to_bar_width_location(data_index: int) -> Tuple[float, float]:
     num_data_entries = len(data_entries)
     bar_width = 1 / num_data_entries
-    
+
     bar_location = bar_width * data_index - 0.5 + bar_width / 2
     return bar_width, bar_location
 

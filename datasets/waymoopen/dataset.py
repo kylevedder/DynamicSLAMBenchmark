@@ -11,17 +11,25 @@ from .waymo_supervised_flow import WaymoSupervisedFlowSequenceLoader, WaymoSuper
 from scene_trajectory_benchmark.eval import Evaluator
 
 
+class EvalType(enum.Enum):
+    RAW_EPE = 0
+    SCALED_EPE = 1
+    CLASS_THREEWAY_EPE = 2
+    BUCKETED_EPE = 3
+
+
 class WaymoOpenSceneFlow():
     """
     Wrapper for the Argoverse 2 dataset.
 
     It provides iterable access over all problems in the dataset.
     """
-    def __init__(
-        self,
-        root_dir: Path,
-        subsequence_length: int = 2,
-        cache_path: Path = Path("/tmp/")) -> None:
+    def __init__(self,
+                 root_dir: Path,
+                 subsequence_length: int = 2,
+                 cache_path: Path = Path("/tmp/"),
+                 eval_type: str = "bucketed_epe",
+                 eval_args=dict()) -> None:
         self.root_dir = Path(root_dir)
         self.sequence_loader = WaymoSupervisedFlowSequenceLoader(root_dir)
         self.subsequence_length = subsequence_length
@@ -35,6 +43,9 @@ class WaymoOpenSceneFlow():
 
         self.dataset_to_sequence_subsequence_idx = self._load_dataset_to_sequence_subsequence_idx(
         )
+
+        self.eval_type = EvalType[eval_type.strip().upper()]
+        self.eval_args = eval_args
 
     def _load_dataset_to_sequence_subsequence_idx(self):
         cache_file = self.cache_path / "waymo" / self.root_dir.parent.name / self.root_dir.name / f"dataset_to_sequence_subsequence_idx_cache_len_{self.subsequence_length}.pkl"
@@ -201,4 +212,13 @@ class WaymoOpenSceneFlow():
 
     def evaluator(self) -> Evaluator:
         # Builds the evaluator object for this dataset.
-        return Evaluator()
+        if self.eval_type == EvalType.RAW_EPE:
+            return PerClassRawEPEEvaluator(**self.eval_args)
+        elif self.eval_type == EvalType.SCALED_EPE:
+            return PerClassScaledEPEEvaluator(**self.eval_args)
+        elif self.eval_type == EvalType.CLASS_THREEWAY_EPE:
+            return PerClassThreewayEPEEvaluator(**self.eval_args)
+        elif self.eval_type == EvalType.BUCKETED_EPE:
+            return BucketedEPEEvaluator(**self.eval_args)
+        else:
+            raise ValueError(f"Unknown eval type {self.eval_type}")

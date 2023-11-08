@@ -39,7 +39,6 @@ class BaseSplitValue:
 
 
 class BaseEvalFrameResult:
-
     def __init__(
         self,
         gt_world_points: np.ndarray,
@@ -48,7 +47,7 @@ class BaseEvalFrameResult:
         pred_flow: np.ndarray,
         class_id_to_name=lambda e: e,
         distance_thresholds: List[float] = [35, np.inf],
-        max_speed_thresholds: List[float] = [0, np.inf],
+        max_speed_thresholds: List[Tuple[float, float]] = [(0, np.inf)],
     ):
 
         self.distance_thresholds = distance_thresholds
@@ -85,8 +84,7 @@ class BaseEvalFrameResult:
         return self.distance_thresholds
 
     def _get_max_speed_thresholds(self) -> List[Tuple[float, float]]:
-        return list(
-            zip(self.max_speed_thresholds, self.max_speed_thresholds[1:]))
+        return self.max_speed_thresholds
 
     def _scale_flows(self, gt_flow: np.ndarray,
                      pred_flow: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -99,26 +97,29 @@ class BaseEvalFrameResult:
         distance_thresholds = self._get_distance_thresholds()
         speed_threshold_tuples = self._get_max_speed_thresholds()
 
-        for class_id in unique_gt_classes:
-            for distance_threshold in distance_thresholds:
-                for speed_threshold_tuple in speed_threshold_tuples:
-                    min_speed_threshold, max_speed_threshold = speed_threshold_tuple
-                    class_matched_mask = gt_class_ids == class_id
+        for speed_threshold_tuple in speed_threshold_tuples:
+            min_speed_threshold, max_speed_threshold = speed_threshold_tuple
+            within_speed_mask = (gt_speeds >= min_speed_threshold) & (
+                gt_speeds < max_speed_threshold)
+            for class_id in unique_gt_classes:
+                class_matched_mask = gt_class_ids == class_id
+                class_and_speed_mask = class_matched_mask & within_speed_mask
+                # Early exiting for improved eval performance
+                if class_and_speed_mask.sum() == 0:
+                    continue
+                for distance_threshold in distance_thresholds:
                     within_distance_mask = (np.linalg.norm(
                         gt_world_points[:, :2], ord=np.inf, axis=1) <
                                             distance_threshold)
-                    within_speed_mask = (gt_speeds >= min_speed_threshold) & (
-                        gt_speeds < max_speed_threshold)
 
-                    match_mask = class_matched_mask & within_distance_mask & within_speed_mask
+                    match_mask = class_and_speed_mask & within_distance_mask
                     count = match_mask.sum()
+                    # Early exiting for improved eval performance
+                    if count == 0:
+                        continue
 
-                    if count > 0:
-                        avg_epe = np.sum(epe_errors[match_mask]) / count
-                        split_avg_speed = np.mean(gt_speeds[match_mask])
-                    else:
-                        avg_epe = 0
-                        split_avg_speed = np.NaN
+                    avg_epe = np.sum(epe_errors[match_mask]) / count
+                    split_avg_speed = np.mean(gt_speeds[match_mask])
                     class_name = class_id_to_name(class_id)
                     yield BaseSplitKey(class_name, distance_threshold,
                                        speed_threshold_tuple), BaseSplitValue(
@@ -126,11 +127,10 @@ class BaseEvalFrameResult:
 
 
 class PerFrameSceneFlowEvaluator(Evaluator):
-
     def __init__(self, output_path: Path = Path("/tmp/frame_results")):
         self.eval_frame_results: List[BaseEvalFrameResult] = []
         self.output_path = output_path
-        print(f"Saving results to {self.output_path}")
+        # print(f"Saving results to {self.output_path}")
         # make the directory if it doesn't exist
         self.output_path.mkdir(parents=True, exist_ok=True)
 
@@ -407,8 +407,5 @@ class PerFrameSceneFlowEvaluator(Evaluator):
         category_to_per_frame_stats = self._category_to_per_frame_stats()
         category_to_average_stats = self._category_to_average_stats(
             category_to_per_frame_stats)
-        for k, v in category_to_average_stats.items():
-            print(k, v)
-
         self._save_stats_tables(category_to_average_stats)
         return category_to_average_stats

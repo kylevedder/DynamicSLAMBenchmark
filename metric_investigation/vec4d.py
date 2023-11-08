@@ -255,13 +255,19 @@ def compute_error_plus_1(pc1, pc2_gt, pc2_est, verbose: bool = False):
 num_rand_vectors = 100
 np.random.seed(0)
 unit_vectors = sample_unit_vectors(num_rand_vectors)
-rand_magnitudes = np.linspace(0, 10, num_rand_vectors) # np.random.rand(num_rand_vectors) * 10
+rand_magnitudes = np.linspace(
+    0, 10, num_rand_vectors)  # np.random.rand(num_rand_vectors) * 10
 scaled_vectors = unit_vectors * rand_magnitudes[:, np.newaxis]
 
-def additive_norm(vector, additive_value : float):
+
+def additive_norm(vector, additive_value: float):
     return np.sqrt(np.sum(vector**2) + additive_value**2)
 
-epsilon_size = [additive_norm(vector, 1) - additive_norm(vector, 0) for vector in scaled_vectors]
+
+epsilon_size = [
+    additive_norm(vector, 1) - additive_norm(vector, 0)
+    for vector in scaled_vectors
+]
 
 plt.scatter(rand_magnitudes, epsilon_size)
 plt.ylabel("Additive size")

@@ -12,11 +12,10 @@ class ThreewayEPEEvalFrameResult(BaseEvalFrameResult):
         # Add additional 0.05 threshold (0.5m/s)
         super().__init__(*args,
                          **kwargs,
-                         max_speed_thresholds=[0, 0.05, np.inf])
+                         max_speed_thresholds=[(0, 0.05), (0.05, np.inf)])
 
 
 class PerClassThreewayEPEEvaluator(PerFrameSceneFlowEvaluator):
-
     def __init__(self,
                  output_path: Path = Path("/tmp/frame_results/threeway_epe")):
         super().__init__(output_path=output_path)

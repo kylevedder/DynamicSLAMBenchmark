@@ -8,7 +8,7 @@ import time
 import numpy as np
 
 from .argoverse_supervised_scene_flow import ArgoverseSupervisedSceneFlowSequenceLoader, ArgoverseSupervisedSceneFlowSequence, CATEGORY_MAP
-from scene_trajectory_benchmark.eval import Evaluator, PerClassRawEPEEvaluator, PerClassScaledEPEEvaluator, PerClassThreewayEPEEvaluator
+from scene_trajectory_benchmark.eval import Evaluator, PerClassRawEPEEvaluator, PerClassScaledEPEEvaluator, PerClassThreewayEPEEvaluator, BucketedEPEEvaluator
 import enum
 
 
@@ -16,6 +16,7 @@ class EvalType(enum.Enum):
     RAW_EPE = 0
     SCALED_EPE = 1
     CLASS_THREEWAY_EPE = 2
+    BUCKETED_EPE = 3
 
 
 class Argoverse2SceneFlow():
@@ -24,14 +25,13 @@ class Argoverse2SceneFlow():
 
     It provides iterable access over all problems in the dataset.
     """
-
     def __init__(self,
                  root_dir: Path,
                  subsequence_length: int = 2,
                  with_ground: bool = True,
                  with_rgb: bool = True,
                  cache_path: Path = Path("/tmp/"),
-                 eval_type: str = "scaled_epe",
+                 eval_type: str = "bucketed_epe",
                  eval_args=dict()) -> None:
         self.root_dir = Path(root_dir)
         self.sequence_loader = ArgoverseSupervisedSceneFlowSequenceLoader(
@@ -88,7 +88,7 @@ class Argoverse2SceneFlow():
         return dataset_to_sequence_subsequence_idx
 
     def __len__(self):
-        return 100  #len(self.dataset_to_sequence_subsequence_idx)
+        return len(self.dataset_to_sequence_subsequence_idx)
 
     def _av2_sequence_id_and_timestamp_to_idx(self, av2_sequence_id: str,
                                               timestamp: int) -> int:
@@ -264,5 +264,7 @@ class Argoverse2SceneFlow():
             return PerClassScaledEPEEvaluator(**self.eval_args)
         elif self.eval_type == EvalType.CLASS_THREEWAY_EPE:
             return PerClassThreewayEPEEvaluator(**self.eval_args)
+        elif self.eval_type == EvalType.BUCKETED_EPE:
+            return BucketedEPEEvaluator(**self.eval_args)
         else:
             raise ValueError(f"Unknown eval type {self.eval_type}")
